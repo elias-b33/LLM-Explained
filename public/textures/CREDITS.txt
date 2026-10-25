@@ -1,0 +1,17 @@
+Museum hall textures and HDRI
+=============================
+
+All assets below are from Poly Haven (https://polyhaven.com) and are licensed
+CC0 (public domain). No attribution is required; credited here as thanks.
+
+Textures (public/textures/<asset_id>/, JPG):
+  plastered_wall_04       2K  diffuse, normal (GL), roughness   walls, columns, vault
+  poly_wool_herringbone   1K  diffuse, normal (GL), roughness   carpet (tinted navy)
+  rough_linen             1K  normal (GL), roughness            curtains (tinted beige)
+  white_oak_veneer        1K  diffuse, normal (GL), roughness   plinths, display table
+  marble_01               1K  diffuse, normal (GL), roughness   table top frame
+
+HDRI (public/hdri/):
+  ballroom                1K  .hdr                              image-based lighting
+
+https://polyhaven.com/license
