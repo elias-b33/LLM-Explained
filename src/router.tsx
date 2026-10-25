@@ -11,6 +11,11 @@ export const router = createBrowserRouter([
     children: [
       { path: '/', element: <Landing /> },
       { path: '/module/:slug', element: <ModulePage /> },
+      {
+        path: '/workshop',
+        errorElement: <RouteError />,
+        lazy: () => import('@/app/WorkshopPage').then((m) => ({ Component: m.WorkshopPage })),
+      },
     ],
   },
   // Fullscreen, outside the app shell (no sidebar/topbar) and fully lazy.

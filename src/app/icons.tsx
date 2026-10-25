@@ -142,6 +142,13 @@ export const PlanetIcon = (p: IconProps) => (
   </Svg>
 )
 
+/** Spanner — the Workshop, where you train your own model. */
+export const WrenchIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M14.7 6.3a4 4 0 0 0 5 5L21 12.6a6 6 0 0 1-7.7 1.6l-6.6 6.6a2 2 0 0 1-2.8-2.8l6.6-6.6A6 6 0 0 1 12.1 3.7L13.4 5z" />
+  </Svg>
+)
+
 export const PlayIcon =(p: IconProps) => (
   <Svg {...p}>
     <path d="M6 4v16l14-8z" />
