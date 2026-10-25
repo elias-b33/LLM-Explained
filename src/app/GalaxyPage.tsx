@@ -83,8 +83,9 @@ export function GalaxyPage() {
     <div className="fixed inset-0" style={{ background: '#070a0f' }}>
       <Suspense
         fallback={
-          <div className="flex h-full items-center justify-center text-sm text-white/50">
-            Entering the universes…
+          <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+            <p className="text-[10px] font-semibold tracking-[0.24em] text-[#d4b062] uppercase">The Planetarium</p>
+            <p className="font-display text-2xl text-[#f1e9da]/80 italic">Dimming the house lights…</p>
           </div>
         }
       >
@@ -113,7 +114,7 @@ export function GalaxyPage() {
         <div
           ref={tipRef}
           dir="auto"
-          className="pointer-events-none fixed top-0 left-0 z-50 flex items-center gap-1.5 rounded-md border border-white/15 bg-black/75 px-2.5 py-1 text-sm text-white shadow-lg backdrop-blur"
+          className="pointer-events-none fixed top-0 left-0 z-50 flex items-center gap-1.5 rounded-sm border border-[#b8924f]/45 bg-[#1a140e]/85 px-2.5 py-1 text-sm text-[#f6efe0] shadow-lg"
           style={{ transform: `translate(${mouse.current.x + 16}px, ${mouse.current.y + 18}px)` }}
         >
           <span

@@ -39,11 +39,19 @@ export function buildColliders(hall: Hall): Colliders {
     circles.push([-NAVE_X, z, COL_R], [NAVE_X, z, COL_R])
   }
   for (const seg of hall.segments) {
-    if (seg.kind === 'station') boxes.push([-VITRINE, seg.z - VITRINE, VITRINE, seg.z + VITRINE])
+    if (seg.kind === 'station') {
+      const x = seg.x ?? 0
+      boxes.push([x - VITRINE, seg.z - VITRINE, x + VITRINE, seg.z + VITRINE])
+    }
   }
   for (const d of hall.decor ?? []) {
     if (d.kind === 'vitrine') boxes.push([d.x - 0.5, d.z - 0.5, d.x + 0.5, d.z + 0.5])
     else if (d.kind === 'table') boxes.push([-0.8, Math.min(d.z0, d.z1), 0.8, Math.max(d.z0, d.z1)])
+    // in-world exhibits: tight boxes around what stands on the floor
+    else if (d.kind === 'slicer') boxes.push([d.x - 0.32, d.z - 0.52, d.x + 0.32, d.z + 0.52])
+    else if (d.kind === 'embedding') boxes.push([d.x - 1.1, d.z - 1.15, d.x + 1.15, d.z + 1.15])
+    else if (d.kind === 'machine') boxes.push([-0.9, d.consoleZ - 0.33, 0.9, d.consoleZ + 0.33])
+    // (the attention walkway is floor tiles you walk over: no collider)
     else if (d.kind === 'curtain' && d.mode === 'partition') {
       const s = d.side === 'left' ? -1 : 1
       const inner = s * (W / 2 - d.len)

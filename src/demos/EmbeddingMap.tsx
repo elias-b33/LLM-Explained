@@ -53,8 +53,12 @@ export function EmbeddingMap() {
         ))}
       </div>
 
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full rounded-lg border border-border bg-surface-2/20">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full rounded-sm border border-border bg-surface">
         <defs>
+          {/* faint surveyor's grid, like a printed chart in a gallery guide */}
+          <pattern id="emb-grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M40 0H0V40" fill="none" stroke="var(--brass)" strokeOpacity={0.14} strokeWidth={1} />
+          </pattern>
           <marker id="emb-arrow" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto">
             <path d="M0,0 L6,3 L0,6 Z" fill="var(--accent)" />
           </marker>
@@ -62,6 +66,7 @@ export function EmbeddingMap() {
             <path d="M0,0 L6,3 L0,6 Z" fill="var(--accent-2)" />
           </marker>
         </defs>
+        <rect width={W} height={H} fill="url(#emb-grid)" />
 
         {hoverWord &&
           neighbors.map((n) => (

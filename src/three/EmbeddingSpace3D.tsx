@@ -32,7 +32,7 @@ function WordNode({ w, dim }: { w: WordPoint; dim: boolean }) {
       <Html position={[0, 0.16, 0]} center distanceFactor={9} style={{ pointerEvents: 'none' }}>
         <span
           style={{
-            color: dim ? '#586074' : '#e8ecf3',
+            color: dim ? '#6b5e4c' : '#f1e9da',
             fontFamily: 'var(--font-mono)',
             fontSize: 13,
             whiteSpace: 'nowrap',
@@ -70,7 +70,11 @@ export function EmbeddingSpace3D() {
         ))}
       </div>
 
-      <div className="h-80 overflow-hidden rounded-lg border border-border" style={{ background: '#070a0f' }}>
+      {/* A small dark display case with a brass frame; the canvas glows inside the glass. */}
+      <div className="display-case mx-1 h-80">
+        <span className="absolute top-2.5 left-3 z-10 font-mono text-[10px] tracking-[0.2em] text-[#d9c49a]/70 uppercase">
+          Drag to orbit
+        </span>
         <Canvas
           ref={canvasRef}
           frameloop={frameloop}
@@ -78,7 +82,7 @@ export function EmbeddingSpace3D() {
           dpr={[1, 1.5]}
           gl={{ alpha: false, antialias: true, preserveDrawingBuffer: import.meta.env.DEV }}
         >
-          <color attach="background" args={['#070a0f']} />
+          <color attach="background" args={['#0f0a07']} />
           <OrbitControls enablePan={false} enableZoom={false} autoRotate autoRotateSpeed={0.55} />
           {EMBEDDING_WORDS.map((w) => (
             <WordNode key={w.word} w={w} dim={highlight.size > 0 && !highlight.has(w.word)} />

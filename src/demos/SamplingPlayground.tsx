@@ -59,8 +59,8 @@ export function SamplingPlayground() {
         )}
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-border bg-surface-2/30 px-3 py-2 text-center">
-        <MathBlock display>
+      <div className="overflow-x-auto">
+        <MathBlock display className="!my-0">
           {String.raw`p_i = \frac{e^{\,z_i / \tau}}{\sum_j e^{\,z_j / \tau}} \qquad \tau = ` + temp.toFixed(2)}
         </MathBlock>
       </div>

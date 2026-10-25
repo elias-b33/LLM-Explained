@@ -53,12 +53,13 @@ export const ANALOGIES: Analogy[] = [
 ]
 
 export const GROUP_COLORS: Record<string, string> = {
-  people: '#4d9bff',
-  royalty: '#8b7bff',
-  geography: '#f0b429',
-  animals: '#35d07f',
-  food: '#ff5d73',
-  number: '#2bd3e0',
+  // Mid-tone pigments: legible as dots on cream paper and as glows in the dark 3-D case.
+  people: '#4f82c9',
+  royalty: '#7b6cf6',
+  geography: '#d4a032',
+  animals: '#3f9a62',
+  food: '#d25f62',
+  number: '#1fb1c0',
 }
 
 /**

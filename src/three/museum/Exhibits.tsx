@@ -19,6 +19,7 @@ import {
 } from 'three'
 import type { Exhibit } from './halls'
 import { tile, type MuseumTextures } from './materials'
+import { activeProfile, textureAnisotropy } from './quality'
 
 export const VIOLET = '#8b7bff'
 export const CYAN = '#2bd3e0'
@@ -48,14 +49,18 @@ export function GlassMaterial({ opacity = 0.12 }: { opacity?: number }) {
   )
 }
 
+/** A canvas texture drawn in logical px; the backing store is scaled up at High quality. */
 function canvasTex(w: number, h: number, draw: (ctx: CanvasRenderingContext2D) => void): CanvasTextureT {
+  const k = activeProfile().boardScale
   const c = document.createElement('canvas')
-  c.width = w
-  c.height = h
-  draw(c.getContext('2d')!)
+  c.width = Math.round(w * k)
+  c.height = Math.round(h * k)
+  const ctx = c.getContext('2d')!
+  ctx.scale(k, k)
+  draw(ctx)
   const t = new CanvasTexture(c)
   t.colorSpace = SRGBColorSpace
-  t.anisotropy = 8
+  t.anisotropy = textureAnisotropy()
   return t
 }
 
@@ -671,137 +676,6 @@ export function DisplayTable({ tex, z0, z1 }: { tex: MuseumTextures; z0: number;
         </group>
       ))}
       <Caption position={[0.72, 0.62, 0]}>The context window, flowing</Caption>
-    </group>
-  )
-}
-
-/* ------------------------------------------------------------------------ */
-/* Suspended next-token board                                               */
-/* ------------------------------------------------------------------------ */
-
-/** Illustrative next-token distributions the board cycles through. */
-const PREDICTIONS: { prompt: string; options: [string, number][] }[] = [
-  { prompt: 'The capital of France is', options: [['Paris', 0.82], ['the', 0.06], ['a', 0.04], ['located', 0.03], ['Lyon', 0.01]] },
-  { prompt: 'I poured the milk into my', options: [['coffee', 0.41], ['cup', 0.22], ['tea', 0.14], ['cereal', 0.11], ['glass', 0.05]] },
-  { prompt: 'Once upon a', options: [['time', 0.97], ['midnight', 0.01], ['hill', 0.004], ['dream', 0.003], ['star', 0.002]] },
-  { prompt: 'The opposite of hot is', options: [['cold', 0.88], ['cool', 0.05], ['not', 0.02], ['freezing', 0.01], ['warm', 0.01]] },
-]
-const BOARD_CYCLE = 5.5
-const BOARD_W = 1280
-const BOARD_H = 720
-
-function drawBoard(ctx: CanvasRenderingContext2D, idx: number, t: number) {
-  const { prompt, options } = PREDICTIONS[idx]
-  const W = BOARD_W
-  const H = BOARD_H
-  ctx.fillStyle = '#0b0f1a'
-  ctx.fillRect(0, 0, W, H)
-  ctx.strokeStyle = 'rgba(139,123,255,0.35)'
-  ctx.lineWidth = 3
-  ctx.strokeRect(14, 14, W - 28, H - 28)
-
-  ctx.textBaseline = 'alphabetic'
-  ctx.fillStyle = CYAN
-  ctx.font = '600 30px "JetBrains Mono", ui-monospace, monospace'
-  ctx.fillText('NEXT-TOKEN PREDICTION', 64, 86)
-  ctx.fillStyle = 'rgba(233,236,243,0.45)'
-  ctx.font = '400 24px Inter, system-ui, sans-serif'
-  ctx.fillText('The model scores every possible next token, then picks one.', 64, 126)
-
-  // Prompt, plus the chosen token once the bars have settled.
-  const grow = Math.min(1, t / 1.2)
-  const chosen = t > 2.2
-  ctx.font = '500 52px Inter, system-ui, sans-serif'
-  ctx.fillStyle = '#f2f4f8'
-  const promptW = ctx.measureText(prompt + ' ').width
-  ctx.fillText(prompt, 64, 222)
-  if (chosen) {
-    ctx.fillStyle = MUSTARD
-    ctx.fillText(options[0][0], 64 + promptW, 222)
-  } else {
-    ctx.fillStyle = 'rgba(43,211,224,0.8)'
-    ctx.fillRect(64 + promptW, 178, 26, 54)
-  }
-
-  // Probability bars.
-  const top = 290
-  const row = 74
-  const labelW = 230
-  const barMax = W - 64 * 2 - labelW - 140
-  const ease = 1 - (1 - grow) ** 3
-  options.forEach(([tok, p], i) => {
-    const y = top + i * row
-    const win = i === 0
-    ctx.font = `${win ? 600 : 400} 34px "JetBrains Mono", ui-monospace, monospace`
-    ctx.fillStyle = win ? '#ffffff' : 'rgba(233,236,243,0.7)'
-    ctx.fillText(tok, 64, y + 38)
-    ctx.fillStyle = 'rgba(255,255,255,0.06)'
-    ctx.fillRect(64 + labelW, y + 6, barMax, 42)
-    ctx.fillStyle = win ? (chosen ? MUSTARD : CYAN) : VIOLET
-    ctx.globalAlpha = win ? 1 : 0.75
-    ctx.fillRect(64 + labelW, y + 6, Math.max(4, barMax * p * ease), 42)
-    ctx.globalAlpha = 1
-    ctx.font = '400 30px "JetBrains Mono", ui-monospace, monospace'
-    ctx.fillStyle = 'rgba(233,236,243,0.75)'
-    const pct = p * ease * 100
-    ctx.fillText(pct >= 1 ? `${pct.toFixed(0)}%` : `${pct.toFixed(1)}%`, 64 + labelW + barMax + 22, y + 38)
-  })
-
-  ctx.fillStyle = 'rgba(233,236,243,0.3)'
-  ctx.font = '400 20px Inter, system-ui, sans-serif'
-  ctx.fillText('Illustrative probabilities', 64, H - 44)
-}
-
-export function SuspendedScreen({ z }: { z: number }) {
-  const { tex, ctx } = useMemo(() => {
-    const c = document.createElement('canvas')
-    c.width = BOARD_W
-    c.height = BOARD_H
-    const t = new CanvasTexture(c)
-    t.colorSpace = SRGBColorSpace
-    t.anisotropy = 8
-    return { tex: t, ctx: c.getContext('2d')! }
-  }, [])
-  const last = useRef('')
-  useFrame((state) => {
-    const time = state.clock.elapsedTime
-    const idx = Math.floor(time / BOARD_CYCLE) % PREDICTIONS.length
-    const t = time % BOARD_CYCLE
-    // Redraw only while something changes: ~20 Hz during the bar growth, once at the pick.
-    const step = t < 1.2 ? Math.floor(t * 20) : t < 2.2 ? 'grown' : 'picked'
-    const key = `${idx}:${step}`
-    if (key === last.current) return
-    last.current = key
-    drawBoard(ctx, idx, t)
-    tex.needsUpdate = true
-  })
-  const w = 3.2
-  const h = 1.8
-  const cy = 3.75
-  return (
-    <group position={[0, 0, z]}>
-      <mesh position={[0, cy, -0.03]} castShadow>
-        <boxGeometry args={[w + 0.08, h + 0.08, 0.05]} />
-        <meshStandardMaterial color="#1c1a17" metalness={0.5} roughness={0.45} />
-      </mesh>
-      <mesh position={[0, cy, 0]}>
-        <planeGeometry args={[w, h]} />
-        <meshBasicMaterial map={tex} toneMapped={false} />
-      </mesh>
-      {/* top + bottom battens */}
-      {[cy + h / 2 + 0.02, cy - h / 2 - 0.02].map((y) => (
-        <mesh key={y} position={[0, y, 0]}>
-          <boxGeometry args={[w + 0.06, 0.04, 0.04]} />
-          <meshStandardMaterial color="#2a2621" metalness={0.6} roughness={0.4} />
-        </mesh>
-      ))}
-      {/* suspension cables up into the vault */}
-      {[-w / 2 + 0.1, w / 2 - 0.1].map((x) => (
-        <mesh key={x} position={[x, (cy + h / 2 + 6.1) / 2, 0]}>
-          <cylinderGeometry args={[0.004, 0.004, 6.1 - (cy + h / 2), 4]} />
-          <meshBasicMaterial color="#6d655a" />
-        </mesh>
-      ))}
     </group>
   )
 }

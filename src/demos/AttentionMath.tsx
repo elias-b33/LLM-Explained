@@ -44,9 +44,8 @@ export function AttentionMath() {
             onClick={() => setQi(i)}
             className={cn(
               'rounded-md px-3 py-1.5 font-mono text-sm transition-colors',
-              i === qi ? 'text-white' : 'border border-border text-fg-muted hover:text-fg',
+              i === qi ? 'holo-active border border-transparent' : 'border border-border bg-surface text-fg-muted hover:border-brass hover:text-fg',
             )}
-            style={i === qi ? { backgroundImage: 'linear-gradient(120deg, var(--accent), var(--accent-2))' } : undefined}
           >
             {t}
           </button>

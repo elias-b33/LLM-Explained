@@ -125,7 +125,24 @@ export const EyeIcon = (p: IconProps) => (
   </Svg>
 )
 
-export const PlayIcon = (p: IconProps) => (
+/** Classical museum facade: pediment, four columns, stylobate. */
+export const MuseumIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 9.5 12 4l9 5.5H3z" />
+    <path d="M5.5 10.5v7M10 10.5v7M14 10.5v7M18.5 10.5v7" />
+    <path d="M3.5 18.5h17M2.5 21h19" />
+  </Svg>
+)
+
+/** Ringed planet — the planetarium (word galaxy). */
+export const PlanetIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="5.5" />
+    <path d="M4.2 15.6C1.9 17.4 1.3 19 2 19.8c1.2 1.3 6.6-1 12-5.2s8.9-9.1 7.8-10.4c-.7-.8-2.4-.4-4.6.9" />
+  </Svg>
+)
+
+export const PlayIcon =(p: IconProps) => (
   <Svg {...p}>
     <path d="M6 4v16l14-8z" />
   </Svg>

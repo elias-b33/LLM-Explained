@@ -8,12 +8,18 @@ import { WallPanel } from './WallPanel'
 import { Station } from './Station'
 import { Doorway } from './Doorway'
 import { FirstPersonControls, type ControlsRef } from './FirstPersonControls'
-import { DecorVitrine, DisplayTable, SuspendedScreen } from './Exhibits'
+import { DecorVitrine, DisplayTable } from './Exhibits'
 import { useMuseumTextures } from './materials'
 import { buildColliders } from './layout'
+import { InteractionManager, GuideStrip } from './InteractionManager'
+import { TokenSlicer } from './exhibits/TokenSlicer'
+import { AttentionWalk } from './exhibits/AttentionWalk'
+import { EmbeddingAlcove } from './exhibits/EmbeddingAlcove'
+import { AutoregressMachine } from './exhibits/AutoregressMachine'
+import { QUALITY_PROFILES, setActiveQuality, type Quality } from './quality'
 import type { Hall as HallData, FocusTarget } from './halls'
 
-/** Set dressing from the hall data: vitrines, the display table, the scrim. */
+/** Set dressing + in-world exhibits from the hall data. */
 function Decor({ hall, sprite }: { hall: HallData; sprite: ReturnType<typeof makeDotTexture> }) {
   const tex = useMuseumTextures()
   return (
@@ -31,7 +37,10 @@ function Decor({ hall, sprite }: { hall: HallData; sprite: ReturnType<typeof mak
             />
           )
         if (d.kind === 'table') return <DisplayTable key={i} tex={tex} z0={d.z0} z1={d.z1} />
-        if (d.kind === 'screen') return <SuspendedScreen key={i} z={d.z} />
+        if (d.kind === 'slicer') return <TokenSlicer key={i} tex={tex} position={[d.x, 0, d.z]} />
+        if (d.kind === 'embedding') return <EmbeddingAlcove key={i} tex={tex} position={[d.x, 0, d.z]} />
+        if (d.kind === 'attention') return <AttentionWalk key={i} z={d.z} />
+        if (d.kind === 'machine') return <AutoregressMachine key={i} tex={tex} z={d.z} consoleZ={d.consoleZ} />
         return null
       })}
     </>
@@ -93,6 +102,7 @@ export default function HallScene({
   onTravel,
   nextLabel,
   prevLabel,
+  quality,
 }: {
   hall: HallData
   controlsRef: ControlsRef
@@ -104,7 +114,11 @@ export default function HallScene({
   onTravel: (dir: 'next' | 'prev') => void
   nextLabel?: string
   prevLabel?: string
+  quality: Quality
 }) {
+  // Module-level profile read by textures/boards while the (keyed) Canvas mounts.
+  setActiveQuality(quality)
+  const profile = QUALITY_PROFILES[quality]
   const sprite = useMemo(makeDotTexture, [])
   const colliders = useMemo(() => buildColliders(hall), [hall])
   const [loading, setLoading] = useState(false)
@@ -121,15 +135,18 @@ export default function HallScene({
   return (
     <>
       <Canvas
+        key={quality}
         frameloop={playing ? 'always' : 'demand'}
         camera={{ position: [0, 1.6, -1], fov: 70 }}
         gl={{
           alpha: false,
-          antialias: true,
+          // The EffectComposer renders into its own MSAA target, so the default
+          // framebuffer's antialiasing would be wasted memory/bandwidth.
+          antialias: false,
           powerPreference: 'high-performance',
           preserveDrawingBuffer: import.meta.env.DEV,
         }}
-        dpr={[1, 1.5]}
+        dpr={profile.dpr}
         shadows="percentage"
         onCreated={(state) => {
           state.gl.shadowMap.autoUpdate = false
@@ -181,7 +198,7 @@ export default function HallScene({
               return (
                 <Station
                   key={i}
-                  position={[0, 0, seg.z]}
+                  position={[seg.x ?? 0, 0, seg.z]}
                   title={seg.title}
                   accent={hall.accent}
                   accent2={hall.accent2}
@@ -214,7 +231,9 @@ export default function HallScene({
             }
             return null
           })}
+          <GuideStrip tour={hall.tour ?? []} />
         </Suspense>
+        <InteractionManager enabled={!focusOpen} />
         <FirstPersonControls
           controlsRef={controlsRef}
           room={hall.room}
@@ -223,18 +242,15 @@ export default function HallScene({
           onLock={onLock}
           onUnlock={onUnlock}
         />
-        <EffectComposer>
+        <EffectComposer multisampling={profile.msaa}>
           <Bloom intensity={0.55} luminanceThreshold={0.92} luminanceSmoothing={0.25} mipmapBlur />
           <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
           <Vignette eskil={false} offset={0.3} darkness={0.55} />
         </EffectComposer>
       </Canvas>
       {loading && (
-        <div
-          className="pointer-events-none absolute inset-0 grid place-items-center text-sm"
-          style={{ background: '#140e09', color: 'rgba(233,220,196,0.6)' }}
-        >
-          Entering the exhibit…
+        <div className="dark pointer-events-none absolute inset-0 grid place-items-center" style={{ background: '#140e09' }}>
+          <p className="exhibit-label">Entering the exhibit…</p>
         </div>
       )}
     </>

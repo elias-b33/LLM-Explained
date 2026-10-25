@@ -2,17 +2,18 @@ import type { Variants, Transition } from 'motion/react'
 
 /**
  * 8-color palette for token chips and chart bars, indexable by `id % 8`.
- * Chosen to read clearly on both the dark and light themes.
+ * Museum pigments: the two AI exhibit lights (violet, cyan) followed by
+ * mid-tone mineral colours that sit well on cream limestone and dark walnut alike.
  */
 export const CHART_COLORS = [
-  '#8b7bff', // violet (brand)
-  '#2bd3e0', // teal
-  '#35d07f', // green
-  '#f0b429', // amber
-  '#ff5d73', // rose
-  '#4d9bff', // blue
-  '#c084fc', // orchid
-  '#ff9f5a', // orange
+  '#7b6cf6', // exhibit violet (brand)
+  '#1fb1c0', // exhibit cyan
+  '#4f9a6a', // verdigris
+  '#d4a032', // ochre / gilt
+  '#d25f62', // terracotta
+  '#4f82c9', // lapis
+  '#a56ac8', // amethyst
+  '#d9824a', // copper
 ] as const
 
 export const colorForIndex = (i: number): string =>

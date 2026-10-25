@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { motion } from 'motion/react'
 import type { PointerLockControls as PointerLockControlsImpl } from 'three-stdlib'
@@ -6,6 +6,9 @@ import { getAdjacent, getModule, moduleLabel } from '@/modules/registry'
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
 import { useProgress } from '@/progress/ProgressProvider'
 import { HALLS, type FocusTarget } from '@/three/museum/halls'
+import { museumUi, resetExplored } from '@/three/museum/interaction'
+import { isMuted, setMuted, startAudio, stopAudio } from '@/three/museum/audio'
+import { gpuInfo, loadQuality, saveQuality, type Quality } from '@/three/museum/quality'
 import { MuseumHUD } from './MuseumHUD'
 import { StationFocus } from './StationFocus'
 
@@ -39,6 +42,16 @@ export function MuseumPage() {
   const [focus, setFocus] = useState<FocusTarget | null>(null)
   const [traveling, setTraveling] = useState(false)
   const webgl = useMemo(hasWebGL, [])
+  const [quality, setQuality] = useState<Quality>(loadQuality)
+  const [muted, setMutedState] = useState(isMuted)
+  const ui = useSyncExternalStore(museumUi.subscribe, museumUi.get)
+  const software = useMemo(() => webgl && gpuInfo().software, [webgl])
+
+  // Fresh tracker per hall visit; audio lives only while the museum is open.
+  useEffect(() => {
+    resetExplored()
+  }, [slug])
+  useEffect(() => () => stopAudio(), [])
 
   const meta = getModule(slug)
   const hall = slug ? HALLS[slug] : undefined
@@ -64,26 +77,17 @@ export function MuseumPage() {
     return (
       <div className="fixed inset-0 grid place-items-center bg-bg px-6 text-center">
         <div className="max-w-md">
-          <p className="font-mono text-xs tracking-wider text-fg-subtle">
-            EXHIBIT {moduleLabel(meta.index)}
-          </p>
-          <h1 className="mt-2 text-2xl font-semibold text-fg">{meta.title}</h1>
+          <p className="exhibit-label">Exhibit {moduleLabel(meta.index)}</p>
+          <h1 className="font-display mt-2 text-3xl text-fg">{meta.title}</h1>
           <p className="mt-3 leading-relaxed text-fg-muted">
             The walkable 3D exhibit moves continuously. Since your system prefers reduced motion, the
             calm reading version may be more comfortable.
           </p>
           <div className="mt-6 flex flex-wrap justify-center gap-3">
-            <button
-              onClick={() => navigate(`/module/${meta.slug}`)}
-              className="rounded-xl px-5 py-3 font-medium text-white"
-              style={{ backgroundImage: 'linear-gradient(120deg, var(--accent), var(--accent-2))' }}
-            >
+            <button onClick={() => navigate(`/module/${meta.slug}`)} className="btn-museum">
               Open the reading version
             </button>
-            <button
-              onClick={() => setForce(true)}
-              className="rounded-xl border border-border px-5 py-3 font-medium text-fg-muted transition-colors hover:text-fg"
-            >
+            <button onClick={() => setForce(true)} className="btn-outline">
               Enter in 3D anyway
             </button>
           </div>
@@ -110,8 +114,8 @@ export function MuseumPage() {
     <div className="fixed inset-0" style={{ background: '#140e09' }}>
       <Suspense
         fallback={
-          <div className="grid h-full place-items-center text-sm text-[#e9dcc4]/60">
-            Entering the exhibit…
+          <div className="dark grid h-full place-items-center">
+            <p className="exhibit-label">Entering the exhibit…</p>
           </div>
         }
       >
@@ -121,6 +125,7 @@ export function MuseumPage() {
           playing={!focus}
           focusOpen={!!focus}
           onLock={() => {
+            startAudio() // a click anywhere can lock; it still carries the user gesture
             setLocked(true)
             setHasEntered(true)
           }}
@@ -129,6 +134,7 @@ export function MuseumPage() {
           onTravel={handleTravel}
           nextLabel={next?.title}
           prevLabel={prev?.title}
+          quality={quality}
         />
       </Suspense>
       <MuseumHUD
@@ -137,8 +143,25 @@ export function MuseumPage() {
         focusOpen={!!focus}
         title={meta.title}
         exhibitLabel={moduleLabel(meta.index)}
-        onEnter={() => controlsRef.current?.lock()}
+        onEnter={() => {
+          startAudio() // needs this user gesture
+          controlsRef.current?.lock()
+        }}
         onExit={() => navigate(`/module/${meta.slug}`)}
+        prompt={ui.prompt}
+        explored={ui.explored.length}
+        tourTotal={hall.tour?.length ?? 0}
+        muted={muted}
+        onToggleMute={() => {
+          setMuted(!muted)
+          setMutedState(!muted)
+        }}
+        quality={quality}
+        onQuality={(q) => {
+          saveQuality(q)
+          setQuality(q)
+        }}
+        softwareRendering={software}
       />
       {focus && <StationFocus target={focus} onClose={() => setFocus(null)} />}
       {traveling && (

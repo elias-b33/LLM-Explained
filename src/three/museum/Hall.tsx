@@ -276,9 +276,10 @@ function buildSpots(hall: HallData): Spot[] {
         intensity: 70,
       })
     } else if (seg.kind === 'station') {
+      const x = seg.x ?? 0
       out.push({
-        pos: [1.6, NY, seg.z + 2.2],
-        target: [0, 1.2, seg.z],
+        pos: x === 0 ? [1.6, NY, seg.z + 2.2] : [Math.sign(x) * 5.0, AY, seg.z + 2.2],
+        target: [x, 1.2, seg.z],
         angle: 0.34,
         intensity: 95,
         shadow: true,
@@ -310,6 +311,11 @@ function buildSpots(hall: HallData): Spot[] {
         intensity: 110,
         shadow: true,
       })
+    } else if (d.kind === 'slicer') {
+      out.push({ pos: [Math.sign(d.x) * 5.0, AY, d.z + 2.0], target: [d.x, 1.1, d.z], angle: 0.42, intensity: 55 })
+    } else if (d.kind === 'machine') {
+      // one wide spot over the console and the board above it
+      out.push({ pos: [1.6, NY, d.consoleZ + 2.6], target: [0, 1.3, d.consoleZ - 0.6], angle: 0.5, intensity: 70 })
     } else if (d.kind === 'screen') {
       out.push({
         pos: [1.6, NY, d.z + 3.4],

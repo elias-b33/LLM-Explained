@@ -4,10 +4,99 @@ import { motion } from 'motion/react'
 import { MODULES, TOTAL_MINUTES, moduleLabel } from '@/modules/registry'
 import { useProgress } from '@/progress/ProgressProvider'
 import { fadeRise, staggerParent } from '@/theme/tokens'
-import { ArrowRightIcon, SparklesIcon } from './icons'
+import { ArrowRightIcon, BookIcon, PlanetIcon, SparklesIcon } from './icons'
 import { StatusDot } from './StatusDot'
 
 const Hero3D = lazy(() => import('@/three/Hero3D'))
+
+/** The centrepiece: the neural sphere shown inside a lit glass case on a stone plinth. */
+function HeroExhibit() {
+  return (
+    <figure className="relative mx-auto w-full max-w-[34rem]">
+      {/* ceiling spotlight falling onto the case */}
+      <div className="spotlight pointer-events-none absolute -inset-x-16 -top-24 h-72" aria-hidden="true" />
+      <div className="display-case relative aspect-[5/4] w-full">
+        <div className="pointer-events-none absolute inset-0">
+          <Suspense fallback={null}>
+            <Hero3D />
+          </Suspense>
+        </div>
+        {/* small engraved maker's plate inside the glass */}
+        <span className="absolute bottom-3 left-3 z-10 font-mono text-[10px] tracking-[0.2em] text-[#d9c49a]/70 uppercase">
+          Live · rendered in your browser
+        </span>
+      </div>
+      <div className="plinth mx-[-4%]" aria-hidden="true" />
+      <div className="mx-auto h-3 w-[96%] bg-[radial-gradient(50%_100%_at_50%_0%,rgb(var(--shadow-color)/0.35),transparent)]" aria-hidden="true" />
+
+      {/* museum label beside the object */}
+      <figcaption className="placard-frame relative mx-auto mt-4 max-w-sm px-5 py-4 text-left sm:absolute sm:right-[-1.5rem] sm:bottom-[-2.5rem] sm:mt-0 sm:w-64">
+        <p className="exhibit-label !text-[10px]">Exhibit 00 · Centrepiece</p>
+        <p className="mt-1 font-display text-xl leading-tight text-fg">The Neural Sphere</p>
+        <p className="mt-1 text-xs leading-relaxed text-fg-muted">
+          220 neurons, light, and signal pulses. An artist’s impression of a network thinking —
+          illustrative, not a real model.
+        </p>
+      </figcaption>
+    </figure>
+  )
+}
+
+/** "Plan your visit" — the three ways into the collection. */
+function VisitOptions({ resumeSlug }: { resumeSlug: string }) {
+  const items = [
+    {
+      to: `/module/${resumeSlug}`,
+      Icon: BookIcon,
+      kicker: 'Read',
+      title: 'The gallery guide',
+      body: 'Eleven exhibits of wall text, each paired with an interactive object you can handle.',
+      tone: 'var(--brass-ink)',
+    },
+    {
+      to: '/museum/orientation',
+      Icon: SparklesIcon,
+      kicker: 'Walk',
+      title: 'The 3D museum',
+      body: 'Stroll through vaulted halls and lean into glass cases where the ideas glow.',
+      tone: 'var(--accent)',
+    },
+    {
+      to: '/galaxy',
+      Icon: PlanetIcon,
+      kicker: 'Gaze',
+      title: 'The planetarium',
+      body: 'Fly through 45,000 words arranged by meaning — embeddings as a night sky.',
+      tone: 'var(--accent-2)',
+    },
+  ]
+  return (
+    <section aria-labelledby="visit-heading" className="mx-auto max-w-6xl px-5 pt-20 sm:px-8">
+      <div className="mb-8 text-center">
+        <p className="exhibit-label">Plan your visit</p>
+        <h2 id="visit-heading" className="mt-2 font-display text-3xl text-fg sm:text-4xl">
+          Three ways through the collection
+        </h2>
+      </div>
+      <div className="grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-3">
+        {items.map(({ to, Icon, kicker, title, body, tone }) => (
+          <Link key={to} to={to} className="group bg-surface p-6 transition-colors hover:bg-bg sm:p-7">
+            <span className="flex items-center gap-2" style={{ color: tone }}>
+              <Icon size={18} />
+              <span className="text-[11px] font-semibold tracking-[0.2em] uppercase">{kicker}</span>
+            </span>
+            <span className="mt-3 block font-display text-2xl text-fg">{title}</span>
+            <span className="mt-2 block text-sm leading-relaxed text-fg-muted">{body}</span>
+            <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold tracking-[0.14em] text-fg uppercase">
+              Enter
+              <ArrowRightIcon size={14} className="text-brass transition-transform group-hover:translate-x-1" />
+            </span>
+          </Link>
+        ))}
+      </div>
+    </section>
+  )
+}
 
 export function Landing() {
   const navigate = useNavigate()
@@ -22,128 +111,129 @@ export function Landing() {
 
   return (
     <div>
-      {/* Hero with 3D backdrop */}
-      <div className="relative flex min-h-[82vh] items-center overflow-hidden bg-aurora">
-        <div className="pointer-events-none absolute inset-0">
-          <Suspense fallback={null}>
-            <Hero3D />
-          </Suspense>
-        </div>
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background:
-              'radial-gradient(ellipse 55% 45% at center, rgba(5,7,12,0.7), rgba(5,7,12,0.2) 60%, transparent 85%)',
-          }}
-        />
-        <section className="relative z-10 mx-auto w-full max-w-3xl px-5 pt-16 pb-20 text-center sm:px-8">
-        <motion.div initial="hidden" animate="visible" variants={staggerParent}>
-          <motion.div
-            variants={fadeRise}
-            className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3.5 py-1.5 text-xs font-medium text-white/70 backdrop-blur"
-          >
-            <SparklesIcon size={14} />
-            An interactive, visual deep-dive
-          </motion.div>
+      {/* Hero: limestone gallery wall, text on the left, the exhibit on the right */}
+      <div className="limestone-wall overflow-hidden border-b border-border-strong/60">
+        <section className="mx-auto grid max-w-6xl items-center gap-14 px-5 pt-14 pb-12 sm:px-8 sm:pb-20 lg:grid-cols-[1.05fr_1fr] lg:gap-10 lg:pt-20 lg:pb-28">
+          <motion.div initial="hidden" animate="visible" variants={staggerParent} className="text-center lg:text-left">
+            <motion.p variants={fadeRise} className="exhibit-label">
+              Permanent exhibition · Interactive
+            </motion.p>
+            <motion.div variants={fadeRise} className="brass-rule-left mx-auto mt-4 w-24 lg:mx-0" aria-hidden="true" />
 
-          <motion.h1
-            variants={fadeRise}
-            className="text-5xl font-semibold tracking-tight text-white sm:text-7xl sm:leading-[1.02]"
-            style={{ textShadow: '0 4px 40px rgba(109,94,252,0.35)' }}
-          >
-            How Language Models <span className="text-shimmer">Actually Work</span>
-          </motion.h1>
-
-          <motion.p
-            variants={fadeRise}
-            className="mx-auto mt-6 max-w-xl text-lg leading-relaxed text-white/70"
-          >
-            Build a real, deep understanding of LLMs — from raw text becoming tokens, to attention,
-            to training and generation. Every idea paired with something you can poke at.
-          </motion.p>
-
-          <motion.div
-            variants={fadeRise}
-            className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row"
-          >
-            <button
-              onClick={() => navigate(`/module/${resumeTarget.slug}`)}
-              className="cta-glow group inline-flex items-center gap-2 rounded-xl px-6 py-3 font-medium text-white shadow-lg transition-transform hover:-translate-y-0.5"
-              style={{
-                backgroundImage: 'linear-gradient(120deg, var(--accent), var(--accent-2))',
-                boxShadow: '0 10px 30px -10px var(--accent)',
-              }}
+            <motion.h1
+              variants={fadeRise}
+              className="mt-6 font-display text-[2.9rem] leading-[1.02] font-semibold text-fg sm:text-7xl"
             >
-              {started ? 'Resume' : 'Begin the journey'}
-              <ArrowRightIcon size={18} className="transition-transform group-hover:translate-x-0.5" />
-            </button>
-            <button
-              onClick={() => navigate('/museum/orientation')}
-              className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-6 py-3 font-medium text-white/90 backdrop-blur transition-colors hover:bg-white/10"
+              How Language Models <em className="holo-text pr-1 font-semibold italic">Actually Work</em>
+            </motion.h1>
+
+            <motion.p
+              variants={fadeRise}
+              className="mx-auto mt-6 max-w-xl text-lg leading-relaxed text-fg-muted lg:mx-0"
             >
-              <SparklesIcon size={16} />
-              Walk the museum
-              <span className="rounded-full border border-white/15 px-1.5 py-0.5 text-[10px] tracking-wide text-white/60">
-                3D
-              </span>
-            </button>
+              A museum of the machine that writes. Follow text as it becomes tokens, meets attention,
+              learns from the internet and speaks again — every idea displayed beside an exhibit you
+              can touch.
+            </motion.p>
+
+            <motion.div
+              variants={fadeRise}
+              className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row lg:justify-start"
+            >
+              <button onClick={() => navigate(`/module/${resumeTarget.slug}`)} className="btn-museum group">
+                {started ? 'Resume your visit' : 'Begin the tour'}
+                <ArrowRightIcon size={16} className="transition-transform group-hover:translate-x-0.5" />
+              </button>
+              <button onClick={() => navigate('/museum/orientation')} className="btn-outline">
+                <SparklesIcon size={15} className="text-accent" />
+                Walk the museum
+                <span className="tag text-accent">3D</span>
+              </button>
+            </motion.div>
+
+            <motion.dl
+              variants={fadeRise}
+              className="mt-10 flex justify-center gap-8 text-left lg:justify-start"
+            >
+              {[
+                [String(MODULES.length), 'Exhibits'],
+                [`~${TOTAL_MINUTES}`, 'Minutes'],
+                ['4', 'Floors'],
+              ].map(([n, l]) => (
+                <div key={l}>
+                  <dt className="sr-only">{l}</dt>
+                  <dd className="font-display text-3xl leading-none text-fg">{n}</dd>
+                  <dd className="mt-1 text-[10px] font-semibold tracking-[0.2em] text-fg-subtle uppercase">{l}</dd>
+                </div>
+              ))}
+            </motion.dl>
           </motion.div>
 
-          <motion.div variants={fadeRise} className="mt-4">
-            <span className="text-sm text-white/45">
-              {MODULES.length} modules · ~{TOTAL_MINUTES} min
-            </span>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
+            className="pb-6 sm:pb-10"
+          >
+            <HeroExhibit />
           </motion.div>
-        </motion.div>
         </section>
-        <div
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-24"
-          style={{ backgroundImage: 'linear-gradient(to bottom, transparent, var(--bg))' }}
-        />
       </div>
 
-      {/* Module list */}
-      <section className="mx-auto max-w-3xl px-5 pb-24 sm:px-8">
-        <div className="mb-6 flex items-end justify-between gap-4">
-          <div>
-            <p className="font-mono text-[11px] tracking-[0.3em] text-fg-subtle uppercase">The collection</p>
-            <h2 className="mt-1 text-2xl font-semibold tracking-tight text-fg">Eleven exhibits, one idea</h2>
-          </div>
-          <span className="hidden text-sm text-fg-subtle sm:block">tokens in → next token out</span>
+      <VisitOptions resumeSlug={resumeTarget.slug} />
+
+      {/* The collection: framed exhibit plaques */}
+      <section aria-labelledby="collection-heading" className="mx-auto max-w-6xl px-5 pt-20 pb-20 sm:px-8">
+        <div className="mb-8 flex flex-col items-center gap-2 text-center">
+          <p className="exhibit-label">The collection</p>
+          <h2 id="collection-heading" className="font-display text-3xl text-fg sm:text-4xl">
+            Eleven exhibits, one idea
+          </h2>
+          <p className="font-display text-lg text-fg-muted italic">tokens in → next token out</p>
         </div>
         <motion.ol
           initial="hidden"
           whileInView="visible"
           viewport={{ once: true, amount: 0.05 }}
           variants={staggerParent}
-          className="space-y-3"
+          className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3"
         >
           {MODULES.map((m) => {
             const status = getStatus(m.slug)
             return (
-              <motion.li key={m.id} variants={fadeRise}>
+              <motion.li key={m.id} variants={fadeRise} className="flex">
                 <Link
                   to={`/module/${m.slug}`}
-                  className="glow-card group flex items-center gap-4 rounded-2xl bg-surface/55 p-4 backdrop-blur-md transition-all duration-300 hover:-translate-y-0.5 hover:bg-surface/80 sm:gap-5 sm:p-5"
+                  className="placard-frame lift-on-hover group relative flex w-full flex-col overflow-hidden p-6 hover:shadow-[inset_0_0_0_4px_var(--surface),inset_0_0_0_5px_var(--gold),0_26px_44px_-26px_rgb(var(--shadow-color)/0.55)]"
                 >
+                  {/* oversized engraved numeral */}
                   <span
-                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl font-mono text-sm font-semibold text-white tabular-nums transition-transform duration-300 group-hover:scale-105"
-                    style={{
-                      backgroundImage:
-                        'linear-gradient(140deg, color-mix(in srgb, var(--accent) 85%, #000), color-mix(in srgb, var(--accent-2) 70%, #000))',
-                      boxShadow: '0 6px 22px -8px var(--accent), inset 0 1px 0 rgba(255,255,255,0.25)',
-                    }}
+                    aria-hidden="true"
+                    className="pointer-events-none absolute -top-3 right-3 font-display text-[6.5rem] leading-none font-semibold text-brass opacity-[0.16] transition-opacity select-none group-hover:opacity-30"
                   >
                     {moduleLabel(m.index)}
                   </span>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-medium text-fg">{m.title}</h3>
-                    <p className="mt-0.5 line-clamp-2 text-sm text-fg-muted">{m.subtitle}</p>
-                  </div>
-                  <StatusDot status={status} className="shrink-0" />
-                  <ArrowRightIcon
-                    size={18}
-                    className="shrink-0 text-fg-subtle transition-all group-hover:translate-x-0.5 group-hover:text-accent"
+                  <span className="relative flex items-center justify-between gap-3">
+                    <span className="exhibit-label !text-[10px]">Exhibit {moduleLabel(m.index)}</span>
+                    <StatusDot status={status} className="shrink-0" />
+                  </span>
+                  <h3 className="relative mt-3 font-display text-[1.65rem] leading-tight text-fg">{m.title}</h3>
+                  <p className="relative mt-2 flex-1 text-sm leading-relaxed text-fg-muted">{m.subtitle}</p>
+                  <span className="relative mt-5 flex items-center justify-between border-t border-border pt-3 text-xs text-fg-subtle">
+                    <span>{m.minutes} min visit</span>
+                    <span className="inline-flex items-center gap-1.5 font-semibold tracking-[0.14em] text-fg uppercase">
+                      View
+                      <ArrowRightIcon size={14} className="text-brass transition-transform group-hover:translate-x-1" />
+                    </span>
+                  </span>
+                  {/* the AI light: a faint violet line that wakes on hover */}
+                  <span
+                    aria-hidden="true"
+                    className="absolute inset-x-6 top-0 h-px opacity-0 transition-opacity group-hover:opacity-100"
+                    style={{
+                      backgroundImage: 'linear-gradient(90deg, transparent, var(--accent), var(--accent-2), transparent)',
+                      boxShadow: '0 0 10px var(--accent)',
+                    }}
                   />
                 </Link>
               </motion.li>

@@ -10,7 +10,8 @@ import {
   type Mesh,
   type MeshBasicMaterial,
 } from 'three'
-import { keys } from './input'
+import { useInteractable } from './interaction'
+import { sfx } from './audio'
 
 const PROBE = new Vector3()
 const FW = 2.6 // opening width
@@ -21,7 +22,7 @@ const CY = FH / 2
  * A glowing portal set into the end wall: a classical plaster architrave with a
  * thin lit reveal around a pulsing energy field, counter-rotating rings and
  * particles streaming through.
- * Walk up + press E to travel onward.
+ * Look at it and press E to travel onward.
  */
 export function Doorway({
   position,
@@ -39,22 +40,26 @@ export function Doorway({
   onTravel: () => void
 }) {
   const [near, setNear] = useState(false)
-  const fired = useRef(false)
   const field = useRef<Mesh>(null)
   const core = useRef<Mesh>(null)
   const ringA = useRef<Group>(null)
   const ringB = useRef<Group>(null)
   const ringC = useRef<Group>(null)
 
+  useInteractable({
+    targets: [field],
+    reach: 4.5,
+    verb: () => `enter “${label}”`,
+    onInteract: () => {
+      sfx('whoosh')
+      onTravel()
+    },
+  })
+
   useFrame((state) => {
     PROBE.set(position[0], 1.6, position[2])
     const inRange = state.camera.position.distanceTo(PROBE) < 3.8
     if (inRange !== near) setNear(inRange)
-    if (inRange && keys.interact && !fired.current) {
-      fired.current = true
-      onTravel()
-    }
-    if (!keys.interact) fired.current = false
 
     const t = state.clock.elapsedTime
     const boost = near ? 1.8 : 1

@@ -1,20 +1,13 @@
 import type { ReactNode } from 'react'
 
-/** A lesson section heading with a small accent marker. */
+/** A lesson section heading: serif title over a short brass hairline. */
 export function SectionHeading({ children, id }: { children: ReactNode; id?: string }) {
   return (
-    <h2
-      id={id}
-      className="mt-2 flex scroll-mt-20 items-center gap-2.5 text-xl font-semibold tracking-tight text-fg sm:text-2xl"
-    >
-      <span
-        className="h-5 w-1 shrink-0 rounded-full"
-        style={{
-          backgroundImage: 'linear-gradient(var(--accent), var(--accent-2))',
-          boxShadow: '0 0 14px color-mix(in srgb, var(--accent) 70%, transparent)',
-        }}
-        aria-hidden="true"
-      />
+    <h2 id={id} className="mt-6 scroll-mt-20 font-display text-[1.75rem] leading-tight text-fg sm:text-[2rem]">
+      <span className="mb-2 flex items-center gap-2" aria-hidden="true">
+        <span className="h-[5px] w-[5px] rotate-45 bg-gold" />
+        <span className="brass-rule-left h-px w-16" />
+      </span>
       {children}
     </h2>
   )

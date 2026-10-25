@@ -1,5 +1,5 @@
-import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { useFrame } from '@react-three/fiber'
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useFrame, useThree } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 
 /**
@@ -47,18 +47,33 @@ export function WallPanel({
   accent?: string
   children: ReactNode
 }) {
-  const card = useRef<HTMLDivElement>(null)
-  // Size the physical frame to the card's real rendered height.
+  const card = useRef<HTMLDivElement | null>(null)
+  // Size the physical frame to the card's real rendered height. drei's <Html>
+  // mounts its children in a separate root after this component's effects run,
+  // so observe the card from a callback ref rather than a layout effect.
   const [cardH, setCardH] = useState<number | null>(null)
-  useLayoutEffect(() => {
-    const el = card.current
+  const ro = useRef<ResizeObserver | null>(null)
+  const cardRef = useCallback((el: HTMLDivElement | null) => {
+    card.current = el
+    ro.current?.disconnect()
+    ro.current = null
     if (!el) return
-    const measure = () => el.offsetHeight > 0 && setCardH(el.offsetHeight * PX)
+    const measure = () => {
+      if (el.offsetHeight > 0) setCardH(el.offsetHeight * PX)
+    }
     measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    return () => ro.disconnect()
+    ro.current = new ResizeObserver(measure)
+    ro.current.observe(el)
   }, [])
+  useEffect(() => () => ro.current?.disconnect(), [])
+  // The frame casts into the baked shadow map: re-bake once it has resized.
+  const gl = useThree((st) => st.gl)
+  const invalidate = useThree((st) => st.invalidate)
+  useEffect(() => {
+    if (cardH === null) return
+    gl.shadowMap.needsUpdate = true
+    invalidate()
+  }, [cardH, gl, invalidate])
 
   useFrame((state) => {
     const dx = state.camera.position.x - position[0]
@@ -69,7 +84,7 @@ export function WallPanel({
   })
 
   const fw = Math.round(width * 132) * PX + 0.18
-  const fh = (cardH ?? height) + 0.18
+  const fh = (cardH ?? height) + 0.16
   return (
     <group position={position} rotation={[0, rotationY, 0]}>
       {/* oak frame + the glowing lightbox face behind the card */}
@@ -89,7 +104,7 @@ export function WallPanel({
         style={{ width: `${Math.round(width * 132)}px`, pointerEvents: 'none' }}
       >
         <div
-          ref={card}
+          ref={cardRef}
           style={{
             ...PLACARD_TOKENS,
             width: '100%',

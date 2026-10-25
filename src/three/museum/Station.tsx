@@ -1,19 +1,18 @@
 import { useRef, useState } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
-import { AdditiveBlending, Vector3, type CanvasTexture, type Group, type Mesh, type MeshBasicMaterial } from 'three'
-import { keys } from './input'
+import { AdditiveBlending, type CanvasTexture, type Group, type Mesh, type MeshBasicMaterial } from 'three'
 import { useMuseumTextures } from './materials'
+import { useInteractable } from './interaction'
+import { sfx } from './audio'
 import { NeuralSphere, TokenBlocks, Vitrine } from './Exhibits'
-
-const PROBE = new Vector3()
 
 /**
  * An interactive station: a glass vitrine on an oak-and-mustard plinth holding
  * a hologram (floating token blocks for the predictor, a neural sphere for the
- * maths). Walk up and press E to open the demo/math in a focused 2D overlay.
- * Proximity brightens the hologram, turns the lid light to the accent and
- * swaps the label hint. Edge-triggered so holding E doesn't re-fire.
+ * maths). Look at it and press E to open the demo/math in a focused 2D
+ * overlay. Being targeted brightens the hologram, turns the lid light to the
+ * accent and swaps the label hint.
  */
 export function Station({
   position,
@@ -34,21 +33,22 @@ export function Station({
 }) {
   const tex = useMuseumTextures()
   const [near, setNear] = useState(false)
-  const fired = useRef(false)
   const holo = useRef<Group>(null)
   const ring = useRef<Mesh>(null)
+  const hit = useRef<Mesh>(null)
+
+  useInteractable({
+    targets: [hit],
+    reach: 3.2,
+    verb: () => `open “${title}”`,
+    onInteract: () => {
+      sfx('click')
+      onOpen()
+    },
+    setHighlight: (h) => setNear(!!h),
+  })
 
   useFrame((state) => {
-    // proximity + interact
-    PROBE.set(position[0], 1.6, position[2])
-    const inRange = state.camera.position.distanceTo(PROBE) < 3.4
-    if (inRange !== near) setNear(inRange)
-    if (inRange && keys.interact && !fired.current) {
-      fired.current = true
-      onOpen()
-    }
-    if (!keys.interact) fired.current = false
-
     const t = state.clock.elapsedTime
     if (holo.current) holo.current.position.y = 1.47 + Math.sin(t * 1.6) * 0.025
     if (ring.current) {
@@ -96,6 +96,12 @@ export function Station({
         </mesh>
       </Vitrine>
 
+      {/* hit volume */}
+      <mesh ref={hit} position={[0, 1.0, 0]}>
+        <boxGeometry args={[1.15, 2.0, 1.15]} />
+        <meshBasicMaterial visible={false} />
+      </mesh>
+
       {/* label */}
       <Html position={[0, 2.45, 0]} center distanceFactor={9} style={{ pointerEvents: 'none' }} zIndexRange={[15, 0]}>
         <div
@@ -114,7 +120,7 @@ export function Station({
               marginTop: 2,
             }}
           >
-            {near ? 'press E to open' : 'interactive'}
+            {near ? 'E · open' : 'interactive'}
           </span>
         </div>
       </Html>

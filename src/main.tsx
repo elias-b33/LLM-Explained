@@ -10,6 +10,11 @@ import '@fontsource/inter/600.css'
 import '@fontsource/inter/700.css'
 import '@fontsource/jetbrains-mono/400.css'
 import '@fontsource/jetbrains-mono/500.css'
+// Classical serif for display headings and exhibit placards (latin subset only).
+import '@fontsource/cormorant-garamond/latin-500.css'
+import '@fontsource/cormorant-garamond/latin-600.css'
+import '@fontsource/cormorant-garamond/latin-600-italic.css'
+import '@fontsource/cormorant-garamond/latin-700.css'
 
 // Math typesetting + design system.
 import 'katex/dist/katex.min.css'

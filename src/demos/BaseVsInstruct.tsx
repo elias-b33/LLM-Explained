@@ -25,9 +25,8 @@ export function BaseVsInstruct() {
             onClick={() => setMode(m)}
             className={cn(
               'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-              mode === m ? 'text-white' : 'text-fg-muted hover:text-fg',
+              mode === m ? 'holo-active' : 'text-fg-muted hover:text-fg',
             )}
-            style={mode === m ? { backgroundImage: 'linear-gradient(120deg, var(--accent), var(--accent-2))' } : undefined}
           >
             {m === 'base' ? 'Base model' : 'Aligned assistant'}
           </button>

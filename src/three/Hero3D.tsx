@@ -155,7 +155,7 @@ function Network() {
         <bufferGeometry>
           <bufferAttribute attach="attributes-position" args={[stars, 3]} />
         </bufferGeometry>
-        <pointsMaterial size={1.4} sizeAttenuation={false} color="#c7d4ff" transparent opacity={0.55} depthWrite={false} />
+        <pointsMaterial size={1.4} sizeAttenuation={false} color="#eadcc2" transparent opacity={0.4} depthWrite={false} />
       </points>
 
       <group ref={group}>
@@ -236,12 +236,14 @@ export default function Hero3D() {
     <Canvas
       ref={canvasRef}
       frameloop={frameloop}
-      camera={{ position: [0, 0.3, 6.4], fov: 58 }}
+      // Framed inside a 5:4 display case on the landing, so pull back a touch.
+      camera={{ position: [0, 0.3, 7.4], fov: 56 }}
       gl={{ alpha: false, antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: import.meta.env.DEV }}
       dpr={[1, 1.5]}
       style={{ pointerEvents: 'none' }}
     >
-      <color attach="background" args={['#05070c']} />
+      {/* warm black velvet: the inside of the museum case (matches --case-inside) */}
+      <color attach="background" args={['#0f0a07']} />
       <Network />
       <EffectComposer>
         <Bloom intensity={1.2} luminanceThreshold={0.08} luminanceSmoothing={0.9} mipmapBlur />

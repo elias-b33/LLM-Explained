@@ -1,37 +1,24 @@
-/** A museum placard summarizing an exhibit — replaces the old end-of-module quiz. */
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII']
+
+/** A framed museum placard summarizing an exhibit — replaces the old end-of-module quiz. */
 export function Placard({ takeaways }: { takeaways: string[] }) {
   return (
-    <section
-      className="glow-card relative overflow-hidden rounded-2xl border border-border/60 p-5 sm:p-6"
-      style={{
-        backgroundImage:
-          'radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 60%), radial-gradient(90% 80% at 100% 100%, color-mix(in srgb, var(--accent-2) 10%, transparent), transparent 60%)',
-        backgroundColor: 'color-mix(in srgb, var(--surface) 65%, transparent)',
-      }}
-    >
-      <div className="mb-4 flex items-center gap-2.5">
-        <span
-          className="h-4 w-1 rounded-full"
-          style={{
-            backgroundImage: 'linear-gradient(var(--accent), var(--accent-2))',
-            boxShadow: '0 0 12px var(--accent)',
-          }}
-          aria-hidden="true"
-        />
-        <span className="text-xs font-semibold tracking-[0.2em] text-fg-subtle uppercase">Key takeaways</span>
+    <section aria-label="Key takeaways" className="placard-frame plaster px-6 py-7 sm:px-9 sm:py-8">
+      <div className="mb-5 text-center">
+        <p className="exhibit-label">On the placard</p>
+        <p className="mt-1 font-display text-2xl text-fg sm:text-3xl">Key takeaways</p>
+        <div className="ornament mx-auto mt-3 w-36" aria-hidden="true">
+          <span />
+        </div>
       </div>
-      <ol className="space-y-3">
+      <ol className="space-y-4">
         {takeaways.map((t, i) => (
-          <li key={i} className="flex gap-3 text-sm leading-relaxed text-fg-muted">
+          <li key={i} className="flex gap-4 text-[0.95rem] leading-relaxed text-fg-muted">
             <span
-              className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md font-mono text-[10px] font-semibold text-white"
-              style={{
-                backgroundImage: 'linear-gradient(140deg, var(--accent), var(--accent-2))',
-                boxShadow: '0 0 12px -2px var(--accent)',
-              }}
+              className="w-8 shrink-0 pt-0.5 text-right font-display text-lg leading-6 font-semibold text-brass-ink"
               aria-hidden="true"
             >
-              {i + 1}
+              {ROMAN[i] ?? i + 1}.
             </span>
             <span>{t}</span>
           </li>

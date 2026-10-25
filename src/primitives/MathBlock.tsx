@@ -26,9 +26,13 @@ export function MathBlock({
   )
 
   if (display) {
+    // An engraved formula plate: parchment strip between two brass hairlines.
     return (
       <div
-        className={cn('my-4 overflow-x-auto overflow-y-hidden py-1 text-center', className)}
+        className={cn(
+          'my-5 overflow-x-auto overflow-y-hidden border-y border-brass/50 bg-surface/70 px-3 py-3 text-center',
+          className,
+        )}
         dangerouslySetInnerHTML={{ __html: html }}
       />
     )

@@ -34,8 +34,11 @@ export function ResidualStream() {
                 animate={{ opacity: 1, height: 'auto', marginTop: i === 0 ? 0 : 4 }}
                 exit={{ opacity: 0, height: 0, marginTop: 0 }}
                 transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-                className="flex items-center rounded-md px-2.5 py-2 text-xs font-medium text-white"
-                style={{ backgroundColor: colorForIndex(i) }}
+                className="flex items-center rounded-sm border-l-[3px] px-2.5 py-2 text-xs font-medium text-fg"
+                style={{
+                  borderLeftColor: colorForIndex(i),
+                  backgroundColor: `color-mix(in srgb, ${colorForIndex(i)} 20%, var(--surface))`,
+                }}
               >
                 + {label}
               </motion.div>

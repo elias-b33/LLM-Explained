@@ -2,8 +2,8 @@ import { colorForIndex } from '@/theme/tokens'
 import { mix } from '@/lib/color'
 
 /**
- * A colored chip representing a single token. Whitespace is made visible
- * (· for space, ↵ for newline) so token boundaries are legible.
+ * A colored chip representing a single token — a little specimen tile.
+ * Whitespace is made visible (· for space, ↵ for newline) so token boundaries are legible.
  */
 export function TokenChip({
   text,
@@ -18,12 +18,17 @@ export function TokenChip({
   const display = text.replace(/ /g, '·').replace(/\n/g, '↵')
   return (
     <span
-      className="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 align-middle font-mono text-[13px]"
-      style={{ backgroundColor: mix(color, 16), borderColor: mix(color, 32), color: 'var(--fg)' }}
+      className="inline-flex items-center gap-1 rounded-[3px] border px-1.5 py-0.5 align-middle font-mono text-[13px]"
+      style={{
+        backgroundColor: `color-mix(in srgb, ${color} 18%, var(--surface))`,
+        borderColor: mix(color, 45),
+        borderBottomWidth: 2,
+        color: 'var(--fg)',
+      }}
       title={`token id: ${id}`}
     >
       <span className="whitespace-pre">{display}</span>
-      {showId && <span className="text-[9px] tabular-nums text-fg-subtle">{id}</span>}
+      {showId && <span className="text-[9px] tabular-nums text-fg-muted">{id}</span>}
     </span>
   )
 }

@@ -39,16 +39,13 @@ export function TransformerFlow() {
             <button
               onClick={() => setStep(i)}
               className={cn(
-                'rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
-                i === step ? 'text-white' : i < step ? 'text-fg' : 'text-fg-subtle hover:text-fg',
-              )}
-              style={
+                'rounded-sm border px-2.5 py-1.5 text-xs font-medium transition-colors',
                 i === step
-                  ? { backgroundImage: 'linear-gradient(120deg, var(--accent), var(--accent-2))' }
+                  ? 'holo-active border-transparent'
                   : i < step
-                    ? { backgroundColor: 'var(--surface-2)' }
-                    : undefined
-              }
+                    ? 'border-border bg-surface-2 text-fg'
+                    : 'border-transparent text-fg-subtle hover:text-fg',
+              )}
             >
               {s.name}
             </button>

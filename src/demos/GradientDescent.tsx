@@ -50,7 +50,7 @@ export function GradientDescent() {
           transition={{ type: 'spring', stiffness: 180, damping: 16 }}
           r={8}
           fill="var(--accent)"
-          stroke="#fff"
+          stroke="var(--surface)"
           strokeWidth={2}
         />
       </svg>

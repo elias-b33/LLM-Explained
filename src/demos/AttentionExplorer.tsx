@@ -35,9 +35,8 @@ export function AttentionExplorer() {
               onClick={() => setQ(i)}
               className={cn(
                 'rounded-md px-2 py-1 font-mono text-sm transition-colors',
-                i === q ? 'text-white' : 'border border-border text-fg-muted hover:text-fg',
+                i === q ? 'holo-active border border-transparent' : 'border border-border bg-surface text-fg-muted hover:border-brass hover:text-fg',
               )}
-              style={i === q ? { backgroundImage: 'linear-gradient(120deg, var(--accent), var(--accent-2))' } : undefined}
             >
               {w}
             </button>
@@ -53,17 +52,27 @@ export function AttentionExplorer() {
           attends to:
         </p>
         <div className="flex flex-wrap gap-1.5">
-          {S.map((w, j) => (
-            <span
-              key={j}
-              className="rounded-md px-2 py-1 font-mono text-sm text-fg"
-              style={{ backgroundColor: mix('var(--accent)', Math.round(W[q][j] * 100)), border: `1px solid ${mix('var(--accent)', 28)}` }}
-              title={`${(W[q][j] * 100).toFixed(0)}%`}
-            >
-              {w}
-              <span className="ml-1 text-[10px] text-fg-subtle">{(W[q][j] * 100).toFixed(0)}</span>
-            </span>
-          ))}
+          {S.map((w, j) => {
+            // Strongly-attended tokens glow deep violet, so flip their ink to white to stay legible.
+            const strong = W[q][j] > 0.45
+            return (
+              <span
+                key={j}
+                className={cn('rounded-md px-2 py-1 font-mono text-sm', strong ? 'text-white' : 'text-fg')}
+                style={{
+                  backgroundColor: mix('var(--accent)', Math.round(W[q][j] * 100)),
+                  border: `1px solid ${mix('var(--accent)', 28)}`,
+                  boxShadow: strong ? '0 0 14px -4px var(--accent)' : undefined,
+                }}
+                title={`${(W[q][j] * 100).toFixed(0)}%`}
+              >
+                {w}
+                <span className={cn('ml-1 text-[10px]', strong ? 'text-white/80' : 'text-fg-subtle')}>
+                  {(W[q][j] * 100).toFixed(0)}
+                </span>
+              </span>
+            )
+          })}
         </div>
       </div>
 
