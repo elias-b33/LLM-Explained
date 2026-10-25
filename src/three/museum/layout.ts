@@ -44,7 +44,6 @@ export function buildColliders(hall: Hall): Colliders {
   for (const d of hall.decor ?? []) {
     if (d.kind === 'vitrine') boxes.push([d.x - 0.5, d.z - 0.5, d.x + 0.5, d.z + 0.5])
     else if (d.kind === 'table') boxes.push([-0.8, Math.min(d.z0, d.z1), 0.8, Math.max(d.z0, d.z1)])
-    else if (d.kind === 'screen') boxes.push([-2.3, d.z - 0.15, 2.3, d.z + 0.15])
     else if (d.kind === 'curtain' && d.mode === 'partition') {
       const s = d.side === 'left' ? -1 : 1
       const inner = s * (W / 2 - d.len)
