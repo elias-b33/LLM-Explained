@@ -25,3 +25,10 @@ dist-ssr
 
 .vercel
 .env*
+
+# Workshop pretraining: data and checkpoints never go in git (public/models/*.bin IS committed: Vercel serves it)
+scripts/pretrain/data/
+scripts/pretrain/runs/
+scripts/pretrain/**/*.pt
+scripts/pretrain/**/__pycache__/
+scripts/pretrain/.venv/

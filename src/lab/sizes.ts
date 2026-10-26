@@ -1,4 +1,5 @@
-export type SizeId = 'tiny' | 'small' | 'medium' | 'large' | 'huge'
+export type SizeId = 'tiny' | 'small' | 'medium' | 'large' | 'huge' | 'xl'
+export type StartFrom = 'scratch' | 'pretrained'
 export type Device = 'cpu' | 'gpu'
 
 export interface ModelSize {
@@ -15,6 +16,10 @@ export interface ModelSize {
   requirement: string
   /** big enough that the CPU engine is impractical */
   gpuRecommended: boolean
+  /** too big for the CPU engine at all: only offered on the GPU */
+  gpuOnly?: boolean
+  /** a pretrained checkpoint can exist for this size (public/models/<id>.bin) */
+  pretrainable?: boolean
 }
 
 export const SIZES: ModelSize[] = [
@@ -69,6 +74,7 @@ export const SIZES: ModelSize[] = [
     blurb: 'Sees 128 characters back. Built for the GPU.',
     requirement: 'Dedicated GPU recommended, 2 GB+ VRAM',
     gpuRecommended: true,
+    pretrainable: true,
   },
   {
     id: 'huge',
@@ -82,8 +88,48 @@ export const SIZES: ModelSize[] = [
     blurb: 'About 10 million knobs. A real workout for a graphics card.',
     requirement: 'Dedicated GPU, 4 GB+ VRAM',
     gpuRecommended: true,
+    pretrainable: true,
+  },
+  {
+    id: 'xl',
+    label: 'XL',
+    nLayer: 8,
+    dModel: 512,
+    nHead: 8,
+    ctx: 256,
+    batch: 8,
+    lr: 6e-4,
+    blurb: 'About 25 million knobs, eight layers deep. GPU only.',
+    requirement: 'GPU only: dedicated GPU, 4 GB+ VRAM',
+    gpuRecommended: true,
+    gpuOnly: true,
+    pretrainable: true,
   },
 ]
+
+/**
+ * Fine-tuning a pretrained model. The learning rate is 1/50 of what the same
+ * size uses from scratch (= its pretraining peak). Measured with the PyTorch
+ * twin on Macbeth (Large, same batch and schedule as the page): at 1/5 the
+ * validation loss bottoms out after ~100 steps and then climbs as the model
+ * memorises the play (1.56 -> 1.32 -> 2.16 per byte by step 900); at 1/50 it
+ * falls to ~1.28 and stays there for the first several minutes. The warmup
+ * ramps the rate up while AdamW's running averages, which start at zero, settle.
+ */
+export const FINETUNE = {
+  lrScale: 0.02,
+  warmupSteps: 100,
+  weightDecay: 0.01,
+}
+/** From scratch: a short warmup and the size's full learning rate (unchanged since the first Workshop). */
+export const SCRATCH_WARMUP = 30
+
+/** Learning rate at a (0-based) step. */
+export function lrAt(s: ModelSize, start: StartFrom, step: number): number {
+  const base = start === 'pretrained' ? s.lr * FINETUNE.lrScale : s.lr
+  const warm = start === 'pretrained' ? FINETUNE.warmupSteps : SCRATCH_WARMUP
+  return base * Math.min(1, (step + 1) / warm)
+}
 
 export function getSize(id: SizeId): ModelSize {
   return SIZES.find((s) => s.id === id) ?? SIZES[0]

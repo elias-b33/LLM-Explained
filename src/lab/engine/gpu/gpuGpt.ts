@@ -578,6 +578,11 @@ export class GpuGPT {
     return this.read(this.params, 0, this.numParams)
   }
 
+  /** Logits of the last forward pass over the training batch shape (B*T rows of V). */
+  readLogits(): Promise<Float32Array> {
+    return this.read(this.logits, 0, this.B * this.T * this.cfg.vocabSize)
+  }
+
   readGrads(): Promise<Float32Array> {
     return this.read(this.grads, 0, this.numParams)
   }

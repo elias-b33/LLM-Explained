@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FromTrainer, GenMsg, GpuInfo, InsightMsg, ReadyMsg, SampleMsg, SelfTestResult, ToHelper, ToTrainer } from './protocol'
-import type { Device, SizeId } from './sizes'
+import type { Device, SizeId, StartFrom } from './sizes'
 
 export interface TrainerView {
   phase: 'booting' | 'loading' | 'ready' | 'training' | 'paused'
@@ -14,6 +14,8 @@ export interface TrainerView {
   losses: number[]
   val: [number, number][]
   samples: SampleMsg[]
+  /** pretrained mode: the sample written before any fine-tuning (kept for comparison) */
+  before: SampleMsg | null
   insight: InsightMsg | null
   error: string | null
   /** WebGPU availability as seen from the training worker (null while probing) */
@@ -26,7 +28,8 @@ export interface TrainerView {
 
 interface GenHandlers {
   onChar: (m: GenMsg) => void
-  onDone: () => void
+  /** tail: leftover text of an unfinished character at the very end */
+  onDone: (tail?: string) => void
 }
 
 const MAX_SAMPLES = 40
@@ -54,6 +57,7 @@ export function useTrainer() {
     losses: [],
     val: [],
     samples: [],
+    before: null,
     insight: null,
     error: null,
     gpu: null,
@@ -119,6 +123,7 @@ export function useTrainer() {
           s.losses = []
           s.val = []
           s.samples = []
+          s.before = null
           s.insight = null
           s.error = null
           break
@@ -146,6 +151,7 @@ export function useTrainer() {
           // keep the very first (random) sample as the "before" picture
           if (next.length > MAX_SAMPLES) next.splice(1, 1)
           s.samples = next
+          if (m.before) s.before = m
           break
         }
         case 'gen':
@@ -155,7 +161,7 @@ export function useTrainer() {
           if (genRef.current?.id === m.id) {
             const h = genRef.current.h
             genRef.current = null
-            h.onDone()
+            h.onDone(m.tail)
           }
           return
         case 'insight':
@@ -200,11 +206,12 @@ export function useTrainer() {
   const send = useCallback((m: ToTrainer) => workerRef.current?.postMessage(m), [])
 
   const init = useCallback(
-    (text: string, size: SizeId, prompt: string, device: Device) => {
+    (text: string, size: SizeId, prompt: string, device: Device, start: StartFrom = 'scratch', weights?: ArrayBuffer) => {
       store.current.phase = 'loading'
       store.current.error = null
       commit()
-      send({ type: 'init', text, size, prompt, seed: 1337, device })
+      // the page keeps its copy of the weights (structured clone, not transfer) for the next re-init
+      send({ type: 'init', text, size, prompt, seed: 1337, device, start, weights })
     },
     [send, commit],
   )
@@ -242,12 +249,12 @@ export function useTrainer() {
   const requestInsight = useCallback((prompt: string) => send({ type: 'insight', prompt }), [send])
 
   /** Compare the GPU engine against the CPU engine; resolves with the per-tensor results. */
-  const runSelfTest = useCallback((): Promise<SelfTestResult> => {
+  const runSelfTest = useCallback((weights?: ArrayBuffer): Promise<SelfTestResult> => {
     store.current.selfTestRunning = true
     commit()
     return new Promise((resolve) => {
       selfTestWaiters.current.push(resolve)
-      send({ type: 'gpuSelfTest' })
+      send({ type: 'gpuSelfTest', weights })
     })
   }, [send, commit])
 

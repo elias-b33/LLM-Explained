@@ -7,8 +7,9 @@
  */
 import { Decoder, GPT, sampleFrom, topK, type GPTConfig } from './engine/gpt.ts'
 import { Rng } from './engine/rng.ts'
-import { buildVocab, decode, encode, type Vocab } from './engine/data.ts'
-import { getSize, type Device, type ModelSize } from './sizes'
+import { buildVocab, byteVocab, decode, encode, tokenLabels, TokenStream, type Vocab } from './engine/data.ts'
+import { parseWeights, type LoadedWeights } from './engine/weights.ts'
+import { FINETUNE, getSize, lrAt, type Device, type ModelSize, type StartFrom } from './sizes'
 import type { FromHelper, FromTrainer, ToHelper, ToTrainer } from './protocol'
 import { GpuGPT } from './engine/gpu/gpuGpt.ts'
 import { adapterLabel, getDevice, probeGpu } from './engine/gpu/device.ts'
@@ -92,6 +93,9 @@ let vocab: Vocab | null = null
 let ids: Uint16Array = new Uint16Array(0)
 let split = 0
 let size: ModelSize = getSize('tiny')
+let startFrom: StartFrom = 'scratch'
+/** parsed pretrained weights (pretrained mode); Reset goes back to these */
+let pretrained: LoadedWeights | null = null
 let model: GPT | null = null
 let promptIds: number[] = []
 let promptText = ''
@@ -122,7 +126,7 @@ let mode: 'probe' | 'single' | 'parallel' = 'single'
 let probe = { single: 0, singleN: 0, parallel: 0, parallelN: 0 }
 let x = new Uint16Array(0)
 let y = new Uint16Array(0)
-let gen: { id: number; dec: Decoder; left: number; temp: number; rng: Rng } | null = null
+let gen: { id: number; dec: Decoder; left: number; temp: number; rng: Rng; stream: TokenStream } | null = null
 let genTimer: ReturnType<typeof setTimeout> | null = null
 
 // ---- GPU state
@@ -164,6 +168,12 @@ function buildModel() {
     gpu = null
   }
   model = new GPT(cfg, seed)
+  if (pretrained) model.params.set(pretrained.params)
+  if (device === 'cpu' && size.gpuOnly) {
+    model = null
+    post({ type: 'error', message: `${size.label} is too big for the CPU engine. Switch to the GPU, or pick a smaller size.` })
+    return
+  }
   if (device === 'cpu') {
     for (const h of helpers) {
       const msg: ToHelper = { type: 'cfg', cfg }
@@ -199,6 +209,8 @@ function buildModel() {
   post({
     type: 'ready',
     vocab: v.chars,
+    vocabKind: v.kind,
+    pretrained: pretrained?.header ?? null,
     params: model.numParams,
     trainChars: split,
     valChars: ids.length - split,
@@ -246,6 +258,11 @@ async function buildGpu(myEpoch: number) {
     gpu = g
   } catch (err) {
     if (myEpoch !== epoch) return
+    if (size.gpuOnly) {
+      model = null
+      post({ type: 'error', message: `Could not start the GPU engine (${String(err)}). ${size.label} is GPU only; pick a smaller size to train on the CPU.` })
+      return
+    }
     post({ type: 'error', message: `Could not start the GPU engine (${String(err)}). Using the CPU engine instead.` })
     device = 'cpu'
     buildModel()
@@ -256,6 +273,8 @@ async function buildGpu(myEpoch: number) {
   post({
     type: 'ready',
     vocab: v.chars,
+    vocabKind: v.kind,
+    pretrained: pretrained?.header ?? null,
     params: m.numParams,
     trainChars: split,
     valChars: ids.length - split,
@@ -344,7 +363,7 @@ function pumpSample() {
   }
   if (j.out.length >= SAMPLE_CHARS) {
     sampleJob = null
-    post({ type: 'sample', step: j.step, loss: j.loss, prompt: promptText, text: decode(vocab, j.out) })
+    post({ type: 'sample', step: j.step, loss: j.loss, prompt: promptText, text: decode(vocab, j.out, true), before: !!pretrained && j.step === 0 })
     return
   }
   setTimeout(pumpSample, 0)
@@ -357,8 +376,7 @@ async function trainStepGpu(myEpoch: number) {
     return
   }
   fillBatch()
-  const warm = Math.min(1, (submitted + 1) / 30)
-  inflight.push(g.trainStep(x, y, { lr: size.lr * warm, beta1: 0.9, beta2: 0.99, eps: 1e-8, weightDecay: 0.01 }, 1))
+  inflight.push(g.trainStep(x, y, adamAt(submitted), 1))
   submitted++
   if (inflight.length >= MAX_INFLIGHT) await resolveGpuStep(myEpoch)
 }
@@ -400,6 +418,17 @@ async function resolveGpuStep(myEpoch: number) {
 
 async function drainGpu(myEpoch: number) {
   while (inflight.length && myEpoch === epoch) await resolveGpuStep(myEpoch)
+}
+
+/** Optimizer settings for a step: warmup + constant LR (lower when fine-tuning, see FINETUNE in sizes.ts). */
+function adamAt(stepIdx: number) {
+  return {
+    lr: lrAt(size, startFrom, stepIdx),
+    beta1: 0.9,
+    beta2: 0.99,
+    eps: 1e-8,
+    weightDecay: startFrom === 'pretrained' ? FINETUNE.weightDecay : 0.01,
+  }
 }
 
 function fillBatch() {
@@ -510,8 +539,7 @@ async function trainStep(myEpoch: number) {
   }
   if (myEpoch !== epoch) return
   m.clipGrads(1)
-  const warm = Math.min(1, (step + 1) / 30)
-  m.step({ lr: size.lr * warm, beta1: 0.9, beta2: 0.99, eps: 1e-8, weightDecay: 0.01 })
+  m.step(adamAt(step))
   const dt = performance.now() - t0
   trainMs += dt
   // the benchmark: steps 2-4 single-threaded vs 6-8 data-parallel, keep the faster
@@ -583,7 +611,7 @@ function emitSample(loss: number) {
     out.push(t)
     dec.push(t)
   }
-  post({ type: 'sample', step, loss, prompt: promptText, text: decode(vocab, out) })
+  post({ type: 'sample', step, loss, prompt: promptText, text: decode(vocab, out, true), before: !!pretrained && step === 0 })
 }
 
 function flush(force = false) {
@@ -692,7 +720,10 @@ async function startGen(id: number, prompt: string, temperature: number, length:
   let p = Array.from(encode(vocab, prompt))
   if (p.length === 0) p = [vocab.index.get('\n') ?? vocab.index.get(' ') ?? 0]
   dec.prime(p)
-  gen = { id, dec, left: length, temp: temperature, rng: new Rng((Math.random() * 2 ** 31) | 0) }
+  // the stream remembers an unfinished character at the end of the prompt (bytes mode)
+  const stream = new TokenStream(vocab)
+  for (const t of p) stream.push(t)
+  gen = { id, dec, left: length, temp: temperature, rng: new Rng((Math.random() * 2 ** 31) | 0), stream }
   genTick()
 }
 
@@ -704,14 +735,17 @@ function genTick() {
   const n = running && device === 'cpu' ? 3 : 1
   for (let k = 0; k < n && g.left > 0; k++) {
     const probs = g.dec.probs(g.temp)
-    const top = topK(probs, 5).map((i) => [vocab!.chars[i], probs[i]] as [string, number])
+    const top = topK(probs, 5).map((i) => {
+      const [label, placeholder] = g.stream.candidate(i)
+      return [label, probs[i], placeholder] as [string, number, boolean]
+    })
     const tok = sampleFrom(probs, g.rng)
-    post({ type: 'gen', id: g.id, ch: vocab.chars[tok], top })
+    post({ type: 'gen', id: g.id, ch: g.stream.push(tok), top })
     g.left--
     if (g.left > 0) g.dec.push(tok)
   }
   if (g.left <= 0) {
-    post({ type: 'genDone', id: g.id })
+    post({ type: 'genDone', id: g.id, tail: g.stream.flush() })
     gen = null
     return
   }
@@ -747,21 +781,31 @@ function pca2(rows: number[][]): [number, number][] {
   return X.map((r) => [r.reduce((s, ri, i) => s + ri * vecs[0][i], 0), r.reduce((s, ri, i) => s + ri * vecs[1][i], 0)])
 }
 
+/** byte ids that occur in the training text (bytes mode shows only those on the map) */
+let presentBytes: number[] = []
+
+/** 2D PCA of the token embeddings, labelled. */
+function embeddingPoints(m: GPT, v: Vocab) {
+  const rows = m.embeddings()
+  const keep = v.kind === 'bytes' ? presentBytes : rows.map((_, i) => i)
+  const proj = pca2(keep.map((i) => rows[i]))
+  return keep.map((id, k) => ({ ch: v.chars[id], x: proj[k][0], y: proj[k][1] }))
+}
+
 function insight(prompt: string) {
   if (!model || !vocab) return
   if (device === 'gpu') {
     void insightGpu(prompt)
     return
   }
-  const proj = pca2(model.embeddings())
-  const points = vocab.chars.map((ch, i) => ({ ch, x: proj[i][0], y: proj[i][1] }))
+  const points = embeddingPoints(model, vocab)
   let attn: { tokens: string[]; heads: number[][] } | null = null
   const p = Array.from(encode(vocab, prompt)).slice(-Math.min(24, size.ctx))
   if (p.length >= 2) {
     const T = p.length
     model.forward(p, null, 1, T)
     const layers = model.attention(1, T)
-    attn = { tokens: p.map((t) => vocab!.chars[t]), heads: layers[layers.length - 1].map((h) => Array.from(h)) }
+    attn = { tokens: tokenLabels(vocab, p), heads: layers[layers.length - 1].map((h) => Array.from(h)) }
   }
   post({ type: 'insight', points, attn })
 }
@@ -776,14 +820,13 @@ async function insightGpu(prompt: string) {
     const e = epoch
     if (mirrorAt !== submitted && !sampleDecoding()) await refreshMirror()
     if (e !== epoch || g !== gpu || !model || !vocab) return
-    const proj = pca2(model.embeddings())
-    const points = vocab.chars.map((ch, i) => ({ ch, x: proj[i][0], y: proj[i][1] }))
+    const points = embeddingPoints(model, vocab)
     let attn: { tokens: string[]; heads: number[][] } | null = null
     const p = Array.from(encode(vocab, prompt)).slice(-g.inferT)
     if (p.length >= 2) {
       const heads = await g.attention(p)
       if (e !== epoch || g !== gpu) return
-      attn = { tokens: p.map((t) => vocab!.chars[t]), heads }
+      attn = { tokens: tokenLabels(vocab, p), heads }
     }
     post({ type: 'insight', points, attn })
   } finally {
@@ -818,7 +861,7 @@ scope.onmessage = (e: MessageEvent<ToTrainer | ToHelper>) => {
         void (async () => {
           try {
             const dev = await getDevice(onGpuLost)
-            const result = await runSelfTest(dev)
+            const result = await runSelfTest(dev, m.weights ? parseWeights(m.weights) : undefined)
             post({ type: 'selfTest', result })
           } catch (err) {
             post({ type: 'selfTest', result: { ok: false, cases: [], ms: 0, summary: 'Self-test could not run', error: String(err) } })
@@ -829,16 +872,37 @@ scope.onmessage = (e: MessageEvent<ToTrainer | ToHelper>) => {
         size = getSize(m.size)
         seed = m.seed
         device = m.device
-        vocab = buildVocab(m.text)
+        startFrom = m.start
+        pretrained = null
+        if (m.start === 'pretrained') {
+          if (!m.weights) throw new Error('no pretrained weights were sent')
+          const w = parseWeights(m.weights)
+          const c = w.header.config
+          if (c.nLayer !== size.nLayer || c.dModel !== size.dModel || c.nHead !== size.nHead || c.ctx !== size.ctx)
+            throw new Error(`the weights file is for a different model shape (${c.nLayer} layers, width ${c.dModel}, context ${c.ctx})`)
+          if (w.header.vocab.type !== 'bytes' || c.vocabSize !== 256) throw new Error('pretrained weights must use the 256-byte vocabulary')
+          pretrained = w
+          vocab = byteVocab()
+        } else {
+          vocab = buildVocab(m.text)
+        }
         ids = encode(vocab, m.text)
+        if (vocab.kind === 'bytes') {
+          const seen = new Uint8Array(256)
+          for (let i = 0; i < ids.length; i++) seen[ids[i]] = 1
+          presentBytes = [...seen.keys()].filter((b) => seen[b])
+        }
         split = Math.floor(ids.length * 0.9)
-        promptText = Array.from(m.prompt)
-          .filter((c) => vocab!.index.has(c))
-          .join('')
+        promptText =
+          vocab.kind === 'bytes'
+            ? m.prompt
+            : Array.from(m.prompt)
+                .filter((c) => vocab!.index.has(c))
+                .join('')
         promptIds = Array.from(encode(vocab, promptText))
         if (promptIds.length === 0) {
           promptIds = [ids[0]]
-          promptText = vocab.chars[ids[0]]
+          promptText = decode(vocab, [ids[0]])
         }
         buildModel()
         return

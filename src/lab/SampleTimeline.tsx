@@ -23,7 +23,7 @@ export function SampleTimeline({ samples }: { samples: SampleMsg[] }) {
             <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
               <span className="exhibit-label !tracking-[0.14em]">
                 Step {s.step.toLocaleString()}
-                {s.step === 0 && ' · untrained'}
+                {s.step === 0 && (s.before ? ' · pretrained, before fine-tuning' : ' · untrained')}
               </span>
               <span className="font-mono text-[11px] text-fg-subtle">
                 loss {s.loss.toFixed(2)}

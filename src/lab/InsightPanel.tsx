@@ -4,7 +4,7 @@ import type { InsightMsg } from './protocol'
 
 const VOWELS = new Set('aeiouyåäöAEIOUYÅÄÖéèàæ')
 const kind = (ch: string): 'vowel' | 'consonant' | 'other' =>
-  VOWELS.has(ch) ? 'vowel' : /\p{L}/u.test(ch) ? 'consonant' : 'other'
+  VOWELS.has(ch) ? 'vowel' : ch.length === 1 && /\p{L}/u.test(ch) ? 'consonant' : 'other'
 const COLORS = { vowel: 'var(--accent)', consonant: 'var(--fg-muted)', other: 'var(--brass-ink)' }
 const show = (ch: string) => (ch === '\n' ? '↵' : ch === ' ' ? '␣' : ch)
 

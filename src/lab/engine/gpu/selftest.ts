@@ -7,6 +7,7 @@
  */
 import { GPT, type GPTConfig } from '../gpt.ts'
 import { Rng } from '../rng.ts'
+import type { LoadedWeights } from '../weights.ts'
 import { GpuGPT } from './gpuGpt.ts'
 
 export interface SelfTestRow {
@@ -30,6 +31,8 @@ export interface SelfTestCase {
   /** after `steps` AdamW steps; rel here is max |Δ| in units of the learning rate */
   params: SelfTestRow[]
   stepLosses: { cpu: number; gpu: number }[]
+  /** max |gpu - cpu| over every logit of the batch (pretrained-weights case) */
+  logitsMaxAbs?: number
   maxGradRel: number
   maxParamDrift: number
   ok: boolean
@@ -60,7 +63,16 @@ interface Case {
   label: string
   cfg: GPTConfig
   B: number
+  /** sequence length (default: the full context) */
+  T?: number
+  /** start from these weights instead of a random init */
+  weights?: Float32Array
+  /** AdamW steps to compare afterwards (default STEPS) */
+  steps?: number
 }
+
+/** Logits must agree this closely on real (pretrained) weights, in absolute terms. */
+const LOGIT_TOL = 1e-3
 
 const CASES: Case[] = [
   // odd sizes: exercises every tile edge and the head split
@@ -124,20 +136,30 @@ function batch(rng: Rng, V: number, n: number) {
 
 async function runCase(device: GPUDevice, c: Case): Promise<SelfTestCase> {
   const { cfg, B } = c
-  const T = cfg.ctx
+  const T = c.T ?? cfg.ctx
   const d = cfg.dModel
+  const nSteps = c.steps ?? STEPS
   const cpu = new GPT(cfg, 7, Float64Array)
   // both engines start from the identical fp32 weights
-  cpu.params.set(Float32Array.from(cpu.params))
+  if (c.weights) cpu.params.set(c.weights)
+  else cpu.params.set(Float32Array.from(cpu.params))
   const gpu = await GpuGPT.create(device, cpu, B, T)
   try {
     const rng = new Rng(2024)
     const { x, y } = batch(rng, cfg.vocabSize, B * T)
 
+    // logits first (a forward with targets overwrites them with probabilities)
+    cpu.forward(x, null, B, T)
+    const V = cfg.vocabSize
+    const lc0 = new Float64Array(B * T * V)
+    for (let n = 0; n < B * T; n++) lc0.set(cpu.logitsRow(B, T, n), n * V)
     cpu.zeroGrad()
     const lossCpu = cpu.forward(x, y, B, T)
     cpu.backward()
     const lossGpu = await gpu.forwardBackward(x, y)
+    const lg0 = await gpu.readLogits()
+    let logitsMaxAbs = 0
+    for (let i = 0; i < lc0.length; i++) logitsMaxAbs = Math.max(logitsMaxAbs, Math.abs(lg0[i] - lc0[i]))
     const gg = await gpu.readGrads()
     const names = tensors(cpu)
     const grads: SelfTestRow[] = names.map(([name, off, len]) => {
@@ -149,7 +171,7 @@ async function runCase(device: GPUDevice, c: Case): Promise<SelfTestCase> {
     // a few full training steps (clip + AdamW) on fresh batches
     const stepLosses: { cpu: number; gpu: number }[] = []
     // restart both from the same state: the forwardBackward above left grads but no update
-    for (let s = 0; s < STEPS; s++) {
+    for (let s = 0; s < nSteps; s++) {
       const b = batch(rng, cfg.vocabSize, B * T)
       cpu.zeroGrad()
       const lc = cpu.forward(b.x, b.y, B, T)
@@ -172,9 +194,11 @@ async function runCase(device: GPUDevice, c: Case): Promise<SelfTestCase> {
     const lossRel = Math.abs(lossGpu - lossCpu) / Math.abs(lossCpu)
     const stepOk = stepLosses.every((l) => Math.abs(l.gpu - l.cpu) / Math.abs(l.cpu) <= LOSS_TOL)
     const maxGradRel = Math.max(...grads.map((g) => g.rel))
-    const maxParamDrift = Math.max(...params.map((p) => p.rel))
+    const maxParamDrift = nSteps > 0 ? Math.max(...params.map((p) => p.rel)) : 0
+    const logitsOk = !c.weights || logitsMaxAbs <= LOGIT_TOL
     return {
       label: c.label,
+      logitsMaxAbs,
       lossCpu,
       lossGpu,
       lossRel,
@@ -183,17 +207,35 @@ async function runCase(device: GPUDevice, c: Case): Promise<SelfTestCase> {
       stepLosses,
       maxGradRel,
       maxParamDrift,
-      ok: lossRel <= LOSS_TOL && stepOk && grads.every((g) => g.ok) && params.every((p) => p.ok),
+      ok: lossRel <= LOSS_TOL && stepOk && logitsOk && grads.every((g) => g.ok) && (nSteps === 0 || params.every((p) => p.ok)),
     }
   } finally {
     gpu.destroy()
   }
 }
 
-export async function runSelfTest(device: GPUDevice): Promise<SelfTestResult> {
+/**
+ * With `pretrained`, a fourth case loads those weights into both engines (the
+ * file was already checked against PyTorch by scripts/pretrain/parity.py) and
+ * compares logits, loss and gradients on a short real-text-shaped batch. It
+ * skips the AdamW steps: the float64 CPU reference is slow at that size.
+ */
+export async function runSelfTest(device: GPUDevice, pretrained?: LoadedWeights): Promise<SelfTestResult> {
   const t0 = performance.now()
   const cases: SelfTestCase[] = []
-  for (const c of CASES) cases.push(await runCase(device, c))
+  const all = [...CASES]
+  if (pretrained) {
+    const cfg = pretrained.header.config
+    all.push({
+      label: `pretrained ${pretrained.header.size} weights (V${cfg.vocabSize} d${cfg.dModel} h${cfg.nHead} L${cfg.nLayer} T16 B2)`,
+      cfg,
+      B: 2,
+      T: Math.min(16, cfg.ctx),
+      weights: pretrained.params,
+      steps: 0,
+    })
+  }
+  for (const c of all) cases.push(await runCase(device, c))
   const ok = cases.every((c) => c.ok)
   const maxLoss = Math.max(...cases.map((c) => c.lossRel), ...cases.flatMap((c) => c.stepLosses.map((l) => Math.abs(l.gpu - l.cpu) / Math.abs(l.cpu))))
   const maxGrad = Math.max(...cases.map((c) => c.maxGradRel))
@@ -201,6 +243,7 @@ export async function runSelfTest(device: GPUDevice): Promise<SelfTestResult> {
   const summary =
     `${ok ? 'PASS' : 'FAIL'} · ${cases.length} configs · loss rel err ≤ ${maxLoss.toExponential(1)} (tol ${LOSS_TOL.toExponential(0)})` +
     ` · grad rel err ≤ ${maxGrad.toExponential(1)} (tol ${GRAD_TOL.toExponential(0)})` +
-    ` · params after ${STEPS} AdamW steps within ${maxDrift.toExponential(1)}×lr (tol ${PARAM_TOL}×lr)`
+    ` · params after ${STEPS} AdamW steps within ${maxDrift.toExponential(1)}×lr (tol ${PARAM_TOL}×lr)` +
+    (pretrained ? ` · pretrained-weights logits within ${(cases[cases.length - 1].logitsMaxAbs ?? 0).toExponential(1)} (tol ${LOGIT_TOL.toExponential(0)})` : '')
   return { ok, cases, ms: performance.now() - t0, summary }
 }

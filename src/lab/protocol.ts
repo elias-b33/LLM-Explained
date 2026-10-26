@@ -1,25 +1,44 @@
-import type { Device, SizeId } from './sizes'
+import type { Device, SizeId, StartFrom } from './sizes'
 import type { GpuInfo } from './engine/gpu/device.ts'
 import type { SelfTestResult } from './engine/gpu/selftest.ts'
 
 export type { GpuInfo, SelfTestResult }
 import type { GPTConfig } from './engine/gpt.ts'
+import type { WeightsHeader } from './engine/weights.ts'
+
+export type { WeightsHeader }
 
 /* main thread -> trainer worker */
 export type ToTrainer =
   | { type: 'connect'; helpers: MessagePort[] }
-  | { type: 'init'; text: string; size: SizeId; prompt: string; seed: number; device: Device }
+  | {
+      type: 'init'
+      text: string
+      size: SizeId
+      prompt: string
+      seed: number
+      device: Device
+      /** scratch: per-text character vocab, random weights. pretrained: byte vocab, weights from `weights` */
+      start: StartFrom
+      /** the raw .bin file (pretrained only) */
+      weights?: ArrayBuffer
+    }
   | { type: 'start' }
   | { type: 'pause' }
   | { type: 'reset' }
   | { type: 'generate'; id: number; prompt: string; temperature: number; length: number }
   | { type: 'stopGenerate' }
   | { type: 'insight'; prompt: string }
-  | { type: 'gpuSelfTest' }
+  /** weights: optionally also check the GPU against the CPU on these pretrained weights */
+  | { type: 'gpuSelfTest'; weights?: ArrayBuffer }
 
 export interface ReadyMsg {
   type: 'ready'
+  /** display label per token id */
   vocab: string[]
+  vocabKind: 'chars' | 'bytes'
+  /** header of the loaded weights file when fine-tuning a pretrained model */
+  pretrained: WeightsHeader | null
   params: number
   trainChars: number
   valChars: number
@@ -52,15 +71,17 @@ export interface SampleMsg {
   loss: number
   prompt: string
   text: string
+  /** written by the pretrained model before any fine-tuning */
+  before?: boolean
 }
 
 export interface GenMsg {
   type: 'gen'
   id: number
-  /** newly generated character */
+  /** text completed by the newly generated token ('' while a multi-byte character is unfinished) */
   ch: string
-  /** top-5 next-character probabilities (temperature-scaled) before this character was drawn */
-  top: [string, number][]
+  /** top-5 next-token probabilities (temperature-scaled) before it was drawn: [label, p, label is a byte placeholder] */
+  top: [string, number, boolean][]
 }
 
 export interface InsightMsg {
@@ -76,7 +97,8 @@ export type FromTrainer =
   | ProgressMsg
   | SampleMsg
   | GenMsg
-  | { type: 'genDone'; id: number }
+  /** tail: leftover text of an unfinished multi-byte character (U+FFFD) */
+  | { type: 'genDone'; id: number; tail?: string }
   | InsightMsg
   | { type: 'error'; message: string }
   | { type: 'gpuInfo'; info: GpuInfo }

@@ -6,6 +6,7 @@ import { DeepDive } from '@/primitives/DeepDive'
 import { cn } from '@/lib/cn'
 import { CORPORA, CUSTOM_MAX, CUSTOM_MIN, type CorpusId } from '@/lab/corpora'
 import {
+  FINETUNE,
   SIZES,
   estStepsPerSec,
   fmtBytes,
@@ -16,9 +17,11 @@ import {
   type Device,
   type ModelSize,
   type SizeId,
+  type StartFrom,
 } from '@/lab/sizes'
+import { fetchWeights, type PretrainedState } from '@/lab/pretrained'
 import { DevicePicker, SelfTestPanel } from '@/lab/DevicePicker'
-import type { GpuInfo, SelfTestResult } from '@/lab/protocol'
+import type { GpuInfo, SelfTestResult, WeightsHeader } from '@/lab/protocol'
 import { useTrainer } from '@/lab/useTrainer'
 import { LossChart } from '@/lab/LossChart'
 import { SampleTimeline } from '@/lab/SampleTimeline'
@@ -94,7 +97,50 @@ export function WorkshopPage() {
   const [loadingText, setLoadingText] = useState(false)
   const [logScale, setLogScale] = useState(false)
   const [playPrompt, setPlayPrompt] = useState('')
+  const [startFrom, setStartFrom] = useState<StartFrom>('scratch')
+  /** download state of each size's pretrained weights (fetched lazily, kept for the session) */
+  const [weights, setWeights] = useState<Partial<Record<SizeId, PretrainedState>>>({})
   const textCache = useRef(new Map<string, string>())
+  const size = SIZES.find((s) => s.id === sizeId)!
+  const wantPretrained = startFrom === 'pretrained' && !!size.pretrainable
+  const wState = wantPretrained ? weights[sizeId] : undefined
+  /** what the model is actually built from right now: pretrained only once its weights are here */
+  const effectiveStart: StartFrom = wantPretrained && wState?.status === 'ready' ? 'pretrained' : 'scratch'
+  const waitingForWeights = wantPretrained && (!wState || wState.status === 'loading')
+
+  // fetch the pretrained weights the first time they are asked for
+  useEffect(() => {
+    if (!wantPretrained || weights[sizeId]) return
+    const ctl = new AbortController()
+    let last = 0
+    fetchWeights(
+      sizeId,
+      (loaded, total) => {
+        const now = performance.now()
+        if (now - last < 100 && loaded !== total) return
+        last = now
+        setWeights((w) => ({ ...w, [sizeId]: { status: 'loading', loaded, total } }))
+      },
+      ctl.signal,
+    )
+      .then((st) => setWeights((w) => ({ ...w, [sizeId]: st })))
+      .catch(() => {
+        /* aborted: forget the partial download */
+        setWeights((w) => {
+          const n = { ...w }
+          delete n[sizeId]
+          return n
+        })
+      })
+    return () => ctl.abort()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantPretrained, sizeId])
+
+  // XL is GPU only: leaving the GPU steps down to the biggest CPU-capable size
+  const changeDevice = (d: Device) => {
+    setDevice(d)
+    if (d === 'cpu' && size.gpuOnly) setSizeId('huge')
+  }
 
   useEffect(() => {
     document.title = 'The Workshop · LLM Explainer'
@@ -126,21 +172,25 @@ export function WorkshopPage() {
           if (cancelled) return
         }
       }
-      if (!cancelled) trainer.init(text, sizeId, prompt, device)
+      if (cancelled) return
+      if (device === 'cpu' && size.gpuOnly) return
+      const w = effectiveStart === 'pretrained' && wState?.status === 'ready' ? wState.buf : undefined
+      trainer.init(text, sizeId, prompt, device, effectiveStart, w)
     }
+    if (waitingForWeights) return
     void go()
     return () => {
       cancelled = true
     }
     // trainer.init is stable
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [corpusId, sizeId, customText, device])
+  }, [corpusId, sizeId, customText, device, effectiveStart, waitingForWeights])
 
   // the worker falls back to the CPU engine if the GPU fails to start: reflect that in the switch
   const [fallbackSeen, setFallbackSeen] = useState<unknown>(null)
   if (view.info && view.info.device === 'cpu' && device === 'gpu' && view.error && fallbackSeen !== view.info) {
     setFallbackSeen(view.info)
-    setDevice('cpu')
+    changeDevice('cpu')
   }
 
   // dev-only: expose the live view for debugging (loss history etc.)
@@ -152,12 +202,16 @@ export function WorkshopPage() {
   const { runSelfTest } = trainer
   useEffect(() => {
     if (!import.meta.env.DEV) return
-    const w = window as unknown as { __gpuSelfTest?: () => Promise<SelfTestResult> }
-    w.__gpuSelfTest = async () => {
-      const r = await runSelfTest()
+    const w = window as unknown as { __gpuSelfTest?: (url?: string) => Promise<SelfTestResult> }
+    // optional url of a .bin: also compare the engines on those pretrained weights
+    w.__gpuSelfTest = async (url?: string) => {
+      const buf = url ? await fetch(url).then((r) => r.arrayBuffer()) : undefined
+      const r = await runSelfTest(buf)
       console.log(`GPU self-test: ${r.error ?? r.summary}`)
       for (const c of r.cases) {
-        console.log(`${c.ok ? 'PASS' : 'FAIL'} ${c.label}: loss cpu ${c.lossCpu} gpu ${c.lossGpu} (rel ${c.lossRel.toExponential(2)})`)
+        console.log(
+          `${c.ok ? 'PASS' : 'FAIL'} ${c.label}: loss cpu ${c.lossCpu} gpu ${c.lossGpu} (rel ${c.lossRel.toExponential(2)}), max logit diff ${c.logitsMaxAbs?.toExponential(2)}`,
+        )
         console.table(
           c.grads.map((g, i) => ({
             tensor: g.tensor,
@@ -180,7 +234,11 @@ export function WorkshopPage() {
   const vocabSize = view.info?.vocab.length ?? 70
   const training = view.phase === 'training'
   const canTrain =
-    (view.phase === 'ready' || view.phase === 'paused') && !loadingText && !(corpusId === 'custom' && !customText)
+    (view.phase === 'ready' || view.phase === 'paused') &&
+    !loadingText &&
+    !waitingForWeights &&
+    !(device === 'cpu' && size.gpuOnly) &&
+    !(corpusId === 'custom' && !customText)
   const recentLoss = useMemo(() => {
     const l = view.losses
     const n = Math.min(50, l.length)
@@ -291,7 +349,7 @@ export function WorkshopPage() {
         </Step>
 
         <Step n="II" title="Pick a model size" hint="Parameters are the knobs training adjusts. More knobs can learn more, but each step is slower.">
-          <DevicePicker device={device} onChange={setDevice} gpu={view.gpu} disabled={training} />
+          <DevicePicker device={device} onChange={changeDevice} gpu={view.gpu} disabled={training} />
           <div role="radiogroup" aria-label="Model size" className="grid grid-cols-1 gap-2.5 md:grid-cols-2 2xl:grid-cols-3 md:[&>:last-child:nth-child(odd)]:col-span-2">
             {SIZES.map((s) => (
               <SizeCard
@@ -307,11 +365,22 @@ export function WorkshopPage() {
           </div>
           <p className="text-xs text-fg-subtle">
             For scale: frontier LLMs are estimated at around a trillion parameters, roughly{' '}
-            <b className="text-fg-muted">{frontierRatio(paramCount(SIZES.find((s) => s.id === sizeId)!, vocabSize))} times</b> more than
+            <b className="text-fg-muted">{frontierRatio(paramCount(size, vocabSize))} times</b> more than
             this one. Speeds are rough estimates; the real number shows up under the training bench.
           </p>
+          <StartFromPicker
+            size={size}
+            startFrom={startFrom}
+            onChange={setStartFrom}
+            state={wState}
+            disabled={training}
+          />
           {view.gpu?.status === 'ok' && (
-            <SelfTestPanel result={view.selfTest} running={view.selfTestRunning} onRun={() => void runSelfTest()} />
+            <SelfTestPanel
+              result={view.selfTest}
+              running={view.selfTestRunning}
+              onRun={() => void runSelfTest(effectiveStart === 'pretrained' && wState?.status === 'ready' ? wState.buf : undefined)}
+            />
           )}
           <DeepDive title="What’s happening? Model size">
             <p>
@@ -325,7 +394,8 @@ export function WorkshopPage() {
               Almost all of training is multiplying big tables of numbers together: millions of multiply-adds per step, each one
               independent of the others. A <b>CPU</b> has a handful of cores that work through them a few at a time. A <b>GPU</b> has
               thousands of small cores that do thousands of multiply-adds at the same moment, which is exactly the shape of this work.
-              That is why the Large and Huge models are practical on a graphics card and painfully slow without one.
+              That is why the Large and Huge models are practical on a graphics card and painfully slow without one, and why XL
+              (25 million parameters) is offered on the GPU only.
             </p>
             <p>
               <b>VRAM</b> is the graphics card’s own memory. During training it has to hold every parameter, its gradient (which way to
@@ -333,6 +403,20 @@ export function WorkshopPage() {
               for the whole batch, including each head’s attention table (context × context numbers per sequence). The memory figure on
               each size adds all of that up. Browsers don’t reveal how much VRAM a card has, so the requirement line is a rule of thumb.
               What we can check is the largest single block of memory your GPU allows, and sizes that wouldn’t fit are switched off.
+            </p>
+          </DeepDive>
+          <DeepDive title="Transfer learning: why start from a pretrained model?">
+            <p>
+              A model trained from scratch on one play has to learn everything from that play alone: spelling, grammar, what a word
+              even is. A <b>pretrained</b> model has already read hundreds of megabytes of English and Swedish books, so it arrives
+              knowing how words, sentences and punctuation work. <b>Fine-tuning</b> then only has to teach it what is special about
+              your text, like its names, its rhythm and its style.
+            </p>
+            <p>
+              This is how real language models are built: one long, expensive pretraining run, then many short, cheap fine-tunes.
+              Fine-tuning uses a learning rate fifty times smaller and warms it up over the first {FINETUNE.warmupSteps}{' '}
+              steps, so the first updates refine what the model knows instead of wiping it out. Pretrained models read raw bytes
+              (256 symbols), so they can take any text, but their loss is per byte, not per character.
             </p>
           </DeepDive>
         </Step>
@@ -360,12 +444,20 @@ export function WorkshopPage() {
               Reset
             </Button>
             <span className="text-xs text-fg-subtle">
-              {view.phase === 'booting' || view.phase === 'loading' || loadingText
-                ? 'Building a fresh, random model…'
+              {device === 'cpu' && size.gpuOnly
+                ? `${size.label} runs on the GPU only.`
+                : waitingForWeights
+                  ? 'Downloading the pretrained weights…'
+                  : view.phase === 'booting' || view.phase === 'loading' || loadingText
+                ? effectiveStart === 'pretrained'
+                  ? 'Loading the pretrained model…'
+                  : 'Building a fresh, random model…'
                 : corpusId === 'custom' && !customText
                   ? 'Paste a text above first.'
                   : view.phase === 'ready'
-                    ? 'A fresh model with random knobs. Press Train.'
+                    ? view.info?.pretrained
+                      ? 'A pretrained model, not yet fine-tuned on this text. Press Train to fine-tune.'
+                      : 'A fresh model with random knobs. Press Train.'
                     : training
                       ? 'Training… you can keep using the page.'
                       : 'Paused. Try generating text below.'}
@@ -393,13 +485,17 @@ export function WorkshopPage() {
             <Stat label="Elapsed" value={fmtTime(view.trainMs)} />
             <Stat label="Train loss" value={recentLoss !== null ? recentLoss.toFixed(3) : '–'} />
             <Stat label="Val loss" value={lastVal !== null ? lastVal.toFixed(3) : '–'} />
-            <Stat label="Vocabulary" value={view.info ? `${view.info.vocab.length} symbols` : '–'} />
+            <Stat
+              label="Vocabulary"
+              value={view.info ? (view.info.vocabKind === 'bytes' ? '256 bytes' : `${view.info.vocab.length} symbols`) : '–'}
+            />
           </div>
           <p className="mt-2 font-mono text-[11px] text-fg-subtle">
             Engine: {view.backend}
             {view.info && view.info.device === 'gpu' && ` · ${fmtBytes(view.info.gpuBytes)} on the GPU`}
             {view.info &&
-              ` · ${fmtInt(view.info.params)} parameters · ${fmtInt(view.info.trainChars)} training chars + ${fmtInt(view.info.valChars)} held out`}
+              ` · ${fmtInt(view.info.params)} parameters · ${fmtInt(view.info.trainChars)} training ${view.info.vocabKind === 'bytes' ? 'bytes' : 'chars'} + ${fmtInt(view.info.valChars)} held out`}
+            {view.info?.pretrained && ` · ${pretrainedSummary(view.info.pretrained)}`}
           </p>
           {view.error && (
             <p className="mt-2 text-sm" style={{ color: 'var(--danger)' }}>
@@ -447,6 +543,15 @@ export function WorkshopPage() {
                 Same prompt, same dice, every {view.sampleEvery ? `${view.sampleEvery} steps` : 'few seconds'}. Watch gibberish become
                 words.
               </p>
+              {view.before && view.samples.length > 1 && (
+                <div className="mb-3 border border-dashed border-brass bg-surface/60 p-3">
+                  <p className="exhibit-label !tracking-[0.14em]">Before fine-tuning · pretrained only</p>
+                  <p className="mt-1.5 font-mono text-[12.5px] leading-relaxed break-words whitespace-pre-wrap text-fg">
+                    <span className="text-brass-ink">{view.before.prompt}</span>
+                    {view.before.text}
+                  </p>
+                </div>
+              )}
               <SampleTimeline samples={view.samples} />
               <div className="mt-2">
                 <DeepDive title="What’s happening? The samples">
@@ -477,6 +582,7 @@ export function WorkshopPage() {
           <Playground
             defaultPrompt={defaultPlayPrompt}
             disabled={!view.info}
+            byteMode={view.info?.vocabKind === 'bytes'}
             generate={trainer.generate}
             stop={trainer.stopGenerate}
             onPromptChange={setPlayPrompt}
@@ -531,7 +637,7 @@ export function WorkshopPage() {
               hundred characters.
             </li>
             <li>
-              <b>Size.</b> Roughly a trillion parameters, against eighteen thousand to about ten million here.
+              <b>Size.</b> Roughly a trillion parameters, against eighteen thousand to about twenty-five million here.
             </li>
             <li>
               <b>Data.</b> Trillions of words from books, websites and code, not one book.
@@ -568,6 +674,21 @@ export function WorkshopPage() {
           ))}
         </ul>
         <p className="mt-2">
+          The pretrained Large, Huge and XL models first read about 380 MB of other public-domain Project Gutenberg books:
+          810 English and 211 Swedish ones, taken from the{' '}
+          <a
+            href="https://huggingface.co/datasets/manu/project_gutenberg"
+            className="underline decoration-brass underline-offset-2 hover:text-fg"
+            target="_blank"
+            rel="noreferrer"
+          >
+            manu/project_gutenberg
+          </a>{' '}
+          collection on Hugging Face, with the Gutenberg header, footer and licence text removed, duplicates dropped, and the three
+          texts above left out, so fine-tuning on them is a fair test. That pretraining ran in PyTorch on one desktop GPU; the
+          weights are the same numbers this page’s engine uses.
+        </p>
+        <p className="mt-2">
           The model is a small GPT-style transformer (token + position embeddings, causal self-attention, MLP, layer norm) written from
           scratch in TypeScript, trained with AdamW in a Web Worker, either on the CPU or on the GPU through WebGPU compute shaders
           (WGSL) that mirror the CPU engine kernel for kernel.
@@ -596,11 +717,12 @@ function SizeCard({
   const pc = paramCount(s, vocabSize)
   const mem = gpuMemory(s, vocabSize)
   let blocked: string | null = null
+  if (device === 'cpu' && s.gpuOnly) blocked = 'too big for the CPU engine. Switch to the GPU above.'
   if (device === 'gpu' && gpu?.status === 'ok') {
     const limit = Math.min(gpu.maxBufferSize, gpu.maxStorageBufferBindingSize)
     if (mem.largestBuffer > limit) blocked = `it needs a ${fmtBytes(mem.largestBuffer)} buffer and this GPU allows at most ${fmtBytes(limit)}.`
   }
-  const cpuSlow = device === 'cpu' && s.gpuRecommended
+  const cpuSlow = device === 'cpu' && s.gpuRecommended && !s.gpuOnly
   return (
     <Choice selected={selected} onClick={onSelect} disabled={!!blocked}>
       <div className="flex w-full flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
@@ -616,7 +738,8 @@ function SizeCard({
         <b className="font-medium text-fg-muted">GPU:</b> ≈ {fmtBytes(mem.total)} of video memory · {s.requirement}
       </span>
       <span className="text-[11px] leading-snug text-fg-subtle">
-        <b className="font-medium text-fg-muted">Est. speed:</b> CPU {fmtSpeed(estStepsPerSec(s, vocabSize, 'cpu'))} (one thread) · GPU{' '}
+        <b className="font-medium text-fg-muted">Est. speed:</b>{' '}
+        {s.gpuOnly ? 'CPU: not offered' : `CPU ${fmtSpeed(estStepsPerSec(s, vocabSize, 'cpu'))} (one thread)`} · GPU{' '}
         {fmtSpeed(estStepsPerSec(s, vocabSize, 'gpu'))} (fast desktop GPU)
       </span>
       {cpuSlow && (
@@ -627,10 +750,101 @@ function SizeCard({
       )}
       {blocked && (
         <span className="mt-1 text-[11px] leading-snug" style={{ color: 'var(--danger)' }}>
-          Off on this GPU: {blocked}
+          {s.gpuOnly && device === 'cpu' ? 'GPU only: ' : 'Off on this GPU: '}
+          {blocked}
         </span>
       )}
     </Choice>
+  )
+}
+
+function pretrainedSummary(h: WeightsHeader): string {
+  const t = h.training ?? {}
+  const parts = ['pretrained']
+  if (t.dataset) parts.push(`on ${t.dataset}`)
+  if (t.tokensSeen) parts.push(`${fmtBytes(t.tokensSeen)} read`)
+  if (typeof t.finalValLoss === 'number') parts.push(`val loss ${t.finalValLoss.toFixed(3)} per byte`)
+  return parts.join(' · ')
+}
+
+/** From scratch vs pretrained, with the weights download (or "coming soon") underneath. */
+function StartFromPicker({
+  size,
+  startFrom,
+  onChange,
+  state,
+  disabled,
+}: {
+  size: ModelSize
+  startFrom: StartFrom
+  onChange: (s: StartFrom) => void
+  state: PretrainedState | undefined
+  disabled: boolean
+}) {
+  const can = !!size.pretrainable
+  return (
+    <div className="space-y-2">
+      <p className="text-sm text-fg-muted">Start from</p>
+      <div role="radiogroup" aria-label="Start from" className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+        <Choice selected={startFrom === 'scratch' || !can} onClick={() => onChange('scratch')} disabled={disabled}>
+          <span className="font-display text-lg leading-tight text-fg">From scratch</span>
+          <span className="text-xs text-fg-muted">Random knobs. Learns only from the text above, one character at a time.</span>
+        </Choice>
+        <Choice selected={startFrom === 'pretrained' && can} onClick={() => onChange('pretrained')} disabled={disabled || !can}>
+          <span className="font-display text-lg leading-tight text-fg">Pretrained</span>
+          <span className="text-xs text-fg-muted">
+            {can
+              ? 'Has already read hundreds of megabytes of English and Swedish books. You fine-tune it on your text.'
+              : 'Available for Large, Huge and XL.'}
+          </span>
+        </Choice>
+      </div>
+      {startFrom === 'pretrained' && can && state && <PretrainedStatus size={size} state={state} />}
+    </div>
+  )
+}
+
+function PretrainedStatus({ size, state }: { size: ModelSize; state: PretrainedState }) {
+  if (state.status === 'loading') {
+    const pct = state.total ? Math.min(100, (state.loaded / state.total) * 100) : null
+    return (
+      <div className="border border-border bg-surface/70 p-2.5 text-xs text-fg-muted">
+        <p>
+          Downloading the pretrained {size.label} weights: {fmtBytes(state.loaded)}
+          {state.total ? ` of ${fmtBytes(state.total)}` : ''}
+        </p>
+        <div
+          className="mt-1.5 h-2 bg-surface-2"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={pct === null ? undefined : Math.round(pct)}
+        >
+          <div className={cn('h-full bg-accent', pct === null && 'w-1/3 animate-pulse')} style={pct === null ? undefined : { width: `${pct}%` }} />
+        </div>
+      </div>
+    )
+  }
+  if (state.status === 'missing')
+    return (
+      <p className="border border-dashed border-brass bg-surface/70 p-2.5 text-xs text-fg-muted">
+        <b className="text-fg">Pretrained weights coming soon.</b> The {size.label} model hasn’t finished its pretraining yet, so
+        for now this size starts from scratch.
+      </p>
+    )
+  if (state.status === 'error')
+    return (
+      <p className="border border-border bg-surface/70 p-2.5 text-xs" style={{ color: 'var(--danger)' }}>
+        Could not load the pretrained weights: {state.message}. Starting from scratch instead.
+      </p>
+    )
+  const t = state.header.training ?? {}
+  return (
+    <p className="text-xs text-fg-subtle">
+      <span className="text-success">●</span> Pretrained {size.label} weights loaded ({fmtBytes(state.bytes)}, {state.header.dtype}).
+      {t.dataset && <> Read {t.tokensSeen ? `${fmtBytes(t.tokensSeen)} of ` : ''}{t.dataset}.</>}
+      {typeof t.finalValLoss === 'number' && <> Validation loss {t.finalValLoss.toFixed(3)} per byte.</>}
+    </p>
   )
 }
 

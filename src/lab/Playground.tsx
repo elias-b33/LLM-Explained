@@ -13,22 +13,25 @@ export function Playground({
   generate,
   stop,
   onPromptChange,
+  byteMode = false,
 }: {
   defaultPrompt: string
   disabled: boolean
-  generate: (prompt: string, temp: number, length: number, h: { onChar: (m: GenMsg) => void; onDone: () => void }) => void
+  generate: (prompt: string, temp: number, length: number, h: { onChar: (m: GenMsg) => void; onDone: (tail?: string) => void }) => void
   stop: () => void
   onPromptChange?: (p: string) => void
+  /** the model reads UTF-8 bytes, not characters */
+  byteMode?: boolean
 }) {
   const [prompt, setPrompt] = useState(defaultPrompt)
   const [temp, setTemp] = useState(0.8)
   const [out, setOut] = useState('')
   const [shownPrompt, setShownPrompt] = useState('')
-  const [top, setTop] = useState<[string, number][]>([])
+  const [top, setTop] = useState<[string, number, boolean][]>([])
   const [busy, setBusy] = useState(false)
   const outRef = useRef<HTMLDivElement>(null)
   // characters arrive in bursts; buffer them and paint once per frame
-  const buf = useRef<{ text: string; top: [string, number][] | null }>({ text: '', top: null })
+  const buf = useRef<{ text: string; top: [string, number, boolean][] | null }>({ text: '', top: null })
   const raf = useRef(0)
 
   useEffect(() => {
@@ -68,7 +71,8 @@ export function Playground({
         buf.current.top = m.top
         paint()
       },
-      onDone: () => {
+      onDone: (tail) => {
+        if (tail) buf.current.text += tail
         paint()
         setBusy(false)
       },
@@ -133,12 +137,22 @@ export function Playground({
       </div>
       <div>
         <p className="mb-1 text-sm text-fg-muted">What it was choosing between</p>
-        <p className="mb-3 text-xs text-fg-subtle">Top 5 guesses for the latest character.</p>
+        <p className="mb-3 text-xs text-fg-subtle">
+          Top 5 guesses for the latest {byteMode ? 'byte' : 'character'}.
+          {byteMode && ' A boxed hex code like ‹C3› is half of a character such as å: it needs one more byte.'}
+        </p>
         <ul className="space-y-1.5" aria-label="Top five next-character probabilities">
-          {(top.length ? top : Array.from({ length: 5 }, () => ['', 0] as [string, number])).map(([ch, p], i) => (
+          {(top.length ? top : Array.from({ length: 5 }, () => ['', 0, false] as [string, number, boolean])).map(([ch, p, isByte], i) => (
             <li key={i} className="flex items-center gap-2">
-              <span className="grid h-7 w-7 shrink-0 place-items-center border border-border bg-surface font-mono text-sm text-fg">
-                {ch ? show(ch) : ''}
+              <span
+                className={
+                  isByte
+                    ? 'grid h-7 w-7 shrink-0 place-items-center border border-dashed border-brass bg-surface font-mono text-[10px] text-brass-ink'
+                    : 'grid h-7 w-7 shrink-0 place-items-center border border-border bg-surface font-mono text-sm text-fg'
+                }
+                title={isByte ? `byte 0x${ch.slice(1, 3)}: part of a multi-byte character` : undefined}
+              >
+                {ch ? (isByte ? ch.slice(1, 3) : show(ch)) : ''}
               </span>
               <span className="relative h-3 flex-1 bg-surface-2">
                 <span

@@ -441,6 +441,11 @@ export class GPT {
     this.g = this.views(this.grads)
   }
 
+  /** Every parameter tensor in storage order: name, element count and offset into `params`. */
+  layout(): { name: string; size: number; offset: number }[] {
+    return this.specs.map((s) => ({ name: s.key, size: s.size, offset: s.offset }))
+  }
+
   private views(buf: Arr): Params {
     const get = (key: string) => {
       const s = this.specs.find((x) => x.key === key)!
