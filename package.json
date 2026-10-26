@@ -6,8 +6,16 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "preview": "vite preview",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "vite build && playwright test --project=chromium",
+    "check:bundle": "node scripts/check-bundle.mjs",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run build && npm run check:bundle",
+    "screenshots": "vite build && playwright test --project=screenshots",
+    "galaxy:bin": "node scripts/build-galaxy-bin.ts"
   },
   "dependencies": {
     "@fontsource/cormorant-garamond": "^5.3.0",
@@ -31,7 +39,9 @@
     "three": "^0.184.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "1.64.0",
     "@types/d3-scale": "^4.0.9",
     "@types/d3-shape": "^3.1.8",
     "@types/katex": "^0.16.8",
@@ -45,8 +55,10 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
+    "playwright-core": "1.64.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.59.2",
-    "vite": "^8.0.12"
+    "vite": "^8.0.12",
+    "vitest": "5.0.4"
   }
 }
