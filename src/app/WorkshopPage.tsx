@@ -33,7 +33,7 @@ const fmtInt = (n: number) => Math.round(n).toLocaleString('en-US')
 
 function Step({ n, title, hint, children }: { n: string; title: string; hint: string; children: ReactNode }) {
   return (
-    <section className="space-y-3">
+    <section className="min-w-0 space-y-3">
       <div>
         <p className="exhibit-label">Step {n}</p>
         <h2 className="mt-0.5 font-display text-[1.7rem] leading-tight text-fg">{title}</h2>
@@ -63,7 +63,7 @@ function Choice({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        'relative flex h-full w-full flex-col items-start border p-3.5 text-left transition-colors enabled:cursor-pointer disabled:opacity-50',
+        'relative flex h-full w-full min-w-0 flex-col items-start border p-3.5 text-left transition-colors enabled:cursor-pointer disabled:opacity-50',
         selected
           ? 'border-accent bg-surface shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_14%,transparent)]'
           : 'border-border bg-surface/60 hover:border-brass hover:bg-surface',
@@ -236,7 +236,7 @@ export function WorkshopPage() {
         </p>
       </motion.header>
 
-      <div className="grid gap-10 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-10">
         <Step n="I" title="Pick the training text" hint="The model starts knowing nothing. Everything it learns comes from this text.">
           <div role="radiogroup" aria-label="Training text" className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
             {CORPORA.map((c) => (
@@ -292,7 +292,7 @@ export function WorkshopPage() {
 
         <Step n="II" title="Pick a model size" hint="Parameters are the knobs training adjusts. More knobs can learn more, but each step is slower.">
           <DevicePicker device={device} onChange={setDevice} gpu={view.gpu} disabled={training} />
-          <div role="radiogroup" aria-label="Model size" className="grid grid-cols-1 gap-2">
+          <div role="radiogroup" aria-label="Model size" className="grid grid-cols-1 gap-2.5 md:grid-cols-2 2xl:grid-cols-3 md:[&>:last-child:nth-child(odd)]:col-span-2">
             {SIZES.map((s) => (
               <SizeCard
                 key={s.id}
