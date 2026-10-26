@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { motion } from 'motion/react'
 import { Button } from '@/primitives/Button'
 import { DemoFrame } from '@/primitives/DemoFrame'
+import { DeepDive } from '@/primitives/DeepDive'
 import { cn } from '@/lib/cn'
 import { CORPORA, CUSTOM_MAX, CUSTOM_MIN, type CorpusId } from '@/lab/corpora'
 import { SIZES, frontierRatio, paramCount, type SizeId } from '@/lab/sizes'
@@ -220,6 +221,18 @@ export function WorkshopPage() {
               </div>
             </div>
           )}
+          <DeepDive title="What’s happening? The training text">
+            <p>
+              The model learns from this text and nothing else. It has never seen a dictionary, a website or a single other book, so
+              whatever style, spelling and words it picks up come from here.
+            </p>
+            <p>
+              Before training, the text is split in two: the first 90% is used for learning, and the last 10% is held out. The model
+              never trains on that part, so we can use it later as a fair exam. More text, and more varied text, gives the model more
+              examples to find real patterns in, so it generalises to new sentences instead of just memorising the ones it saw. With a
+              very short text, it can only memorise.
+            </p>
+          </DeepDive>
         </Step>
 
         <Step n="II" title="Pick a model size" hint="Parameters are the knobs training adjusts. More knobs can learn more, but each step is slower.">
@@ -243,6 +256,19 @@ export function WorkshopPage() {
             <b className="text-fg-muted">{frontierRatio(paramCount(SIZES.find((s) => s.id === sizeId)!, vocabSize))} times</b> more than
             this one.
           </p>
+          <DeepDive title="What’s happening? Model size">
+            <p>
+              <b>Parameters</b> are the adjustable numbers inside the model. Training is the process of tuning them. <b>Layers</b> are
+              stacked processing stages: each one refines what the previous one worked out. <b>Heads</b> are parallel “attention”
+              spotlights inside a layer, each free to look for a different kind of clue. <b>Width</b> is how many numbers describe each
+              character internally, so a wider model can hold richer ideas. <b>Context</b> is how many previous characters it can see
+              when guessing the next one.
+            </p>
+            <p>
+              Bigger models can learn more, but every step has more arithmetic to do, so training is slower. Your laptop has to do all
+              of it.
+            </p>
+          </DeepDive>
         </Step>
       </div>
 
@@ -278,6 +304,21 @@ export function WorkshopPage() {
                       ? 'Training… you can keep using the page.'
                       : 'Paused. Try generating text below.'}
             </span>
+          </div>
+
+          <div className="mt-4">
+            <DeepDive title="What’s happening? Training">
+              <p>
+                One <b>step</b> has three parts. The model guesses the next character at hundreds of spots in the text. Then we measure
+                how wrong the guesses were. Finally, <b>gradient descent</b> nudges every parameter a tiny amount in whichever direction
+                would have made those guesses a bit better. Then it repeats, thousands of times.
+              </p>
+              <p>
+                <b>Chars / sec</b> is how many characters the model is learning from each second, a measure of your computer’s speed.
+                At the start, every parameter is random, so the model is just guessing, and its output is gibberish. It only gets
+                better because millions of tiny nudges add up.
+              </p>
+            </DeepDive>
           </div>
 
           <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
@@ -318,6 +359,20 @@ export function WorkshopPage() {
                 Validation loss is measured on the last 10% of the text, which it never trains on. If it tracks the training line, the
                 model is learning patterns, not memorising.
               </p>
+              <div className="mt-2">
+                <DeepDive title="What’s happening? The loss chart">
+                  <p>
+                    Loss is a measure of <b>surprise</b>, in units called nats. If the model gave the real next character a high
+                    probability, it’s barely surprised and the loss is low. If it gave it almost none, the loss is high.
+                  </p>
+                  <p>
+                    The dashed <b>random-guessing line</b> sits at ln(vocabulary size): the loss of a model that thinks every symbol is
+                    equally likely. Below it, the model has learned something. <b>Training</b> loss is measured on text it practises
+                    on; <b>validation</b> loss on the held-out text. A small gap is normal. <b>Overfitting</b> is when training keeps
+                    falling but validation flattens or rises: the model is memorising rather than learning.
+                  </p>
+                </DeepDive>
+              </div>
             </div>
             <div className="min-w-0">
               <p className="font-display text-lg text-fg">What it writes</p>
@@ -326,6 +381,19 @@ export function WorkshopPage() {
                 words.
               </p>
               <SampleTimeline samples={view.samples} />
+              <div className="mt-2">
+                <DeepDive title="What’s happening? The samples">
+                  <p>
+                    Early on, the model has only learned which characters are common, so you get noise. Soon it picks up letter
+                    patterns, like which letters tend to follow each other. Then whole words appear, then punctuation, line breaks and
+                    the rhythm of the text, and finally something of its style.
+                  </p>
+                  <p>
+                    All of this comes from one skill. At every moment the model only predicts a single next character, then repeats.
+                    It never plans a sentence ahead.
+                  </p>
+                </DeepDive>
+              </div>
             </div>
           </div>
         </DemoFrame>
@@ -346,6 +414,20 @@ export function WorkshopPage() {
             stop={trainer.stopGenerate}
             onPromptChange={setPlayPrompt}
           />
+          <div className="mt-4">
+            <DeepDive title="What’s happening? Generation and temperature">
+              <p>
+                For each new character, the model produces a probability for every symbol in its vocabulary. The bars show the most
+                likely candidates. It then <b>samples</b>: it rolls weighted dice, so a character with 60% probability is picked about
+                60% of the time.
+              </p>
+              <p>
+                <b>Temperature</b> reshapes those odds. Low temperature favours the top choice nearly every time: safe, but repetitive
+                and prone to loops. High temperature flattens the odds, so unlikely characters get picked: more creative, but also more
+                chaotic and error-prone.
+              </p>
+            </DeepDive>
+          </div>
         </DemoFrame>
       </div>
 
@@ -354,7 +436,48 @@ export function WorkshopPage() {
         <h2 className="mt-0.5 mb-3 font-display text-[1.7rem] leading-tight text-fg">Look inside</h2>
         <DemoFrame title="Under the glass" status="real" caption="Live views of your model’s own numbers. They refresh every few seconds while it trains.">
           <InsightPanel insight={view.insight} />
+          <div className="mt-4">
+            <DeepDive title="What’s happening? Under the glass">
+              <p>
+                <b>Embeddings:</b> inside the model, each character becomes a list of numbers, a point in space. The map squashes that
+                space down to two dimensions. Nobody tells the model which characters are alike, but as it trains, similar ones, such
+                as vowels, end up close together because they behave similarly in text.
+              </p>
+              <p>
+                <b>Attention:</b> to guess the next character, the model looks back at earlier ones and decides how much each matters.
+                The heatmap shows those weights: a stronger colour means “paying more attention”. The upper-right triangle is empty on purpose:
+                the model can only look at what came before, never ahead, because the future is exactly what it is trying to predict.
+              </p>
+            </DeepDive>
+          </div>
         </DemoFrame>
+      </div>
+
+      <div className="mt-12">
+        <DeepDive title="How is this different from ChatGPT?">
+          <p>
+            Same core idea: <b>predict the next token</b>. The differences are mostly scale and polish.
+          </p>
+          <ul>
+            <li>
+              <b>Tokens, not characters.</b> Real models read chunks of words, so a sentence is a few dozen tokens instead of a few
+              hundred characters.
+            </li>
+            <li>
+              <b>Size.</b> Roughly a trillion parameters, against a few thousand to a few hundred thousand here.
+            </li>
+            <li>
+              <b>Data.</b> Trillions of words from books, websites and code, not one book.
+            </li>
+            <li>
+              <b>Compute.</b> Thousands of GPUs running for months, not a browser tab for minutes.
+            </li>
+            <li>
+              <b>Assistant training.</b> After that, <b>instruction tuning</b> and <b>RLHF</b> (reinforcement learning from human
+              feedback) teach the model to answer questions helpfully instead of just continuing text.
+            </li>
+          </ul>
+        </DeepDive>
       </div>
 
       <aside className="mt-12 border-t border-border pt-6 text-xs leading-relaxed text-fg-subtle">

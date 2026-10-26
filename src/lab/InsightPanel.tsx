@@ -104,7 +104,7 @@ function AttentionHeatmap({ attn }: { attn: NonNullable<InsightMsg['attn']> }) {
         </svg>
       </div>
       <figcaption className="mt-2 text-xs text-fg-muted">
-        Each row is a character looking back at earlier ones (it can never peek ahead). Darker = more attention.
+        Each row is a character looking back at earlier ones (it can never peek ahead). Stronger colour = more attention.
       </figcaption>
     </figure>
   )
