@@ -41,7 +41,7 @@ export function MuseumPage() {
   const [force, setForce] = useState(false)
   const [focus, setFocus] = useState<FocusTarget | null>(null)
   const [traveling, setTraveling] = useState(false)
-  const webgl = useMemo(hasWebGL, [])
+  const webgl = useMemo(() => hasWebGL(), [])
   const [quality, setQuality] = useState<Quality>(loadQuality)
   const [muted, setMutedState] = useState(isMuted)
   const ui = useSyncExternalStore(museumUi.subscribe, museumUi.get)

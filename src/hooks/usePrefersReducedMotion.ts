@@ -1,16 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useSyncExternalStore } from 'react'
+
+const QUERY = '(prefers-reduced-motion: reduce)'
+
+function subscribe(onChange: () => void) {
+  const mq = window.matchMedia(QUERY)
+  mq.addEventListener('change', onChange)
+  return () => mq.removeEventListener('change', onChange)
+}
+const getSnapshot = () => window.matchMedia(QUERY).matches
+const getServerSnapshot = () => false
 
 /** True when the user has requested reduced motion. Heavy animations should respect this. */
 export function usePrefersReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(false)
-
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
-    setReduced(mq.matches)
-    const handler = (e: MediaQueryListEvent) => setReduced(e.matches)
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
-  }, [])
-
-  return reduced
+  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
 }

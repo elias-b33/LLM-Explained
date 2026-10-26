@@ -67,13 +67,13 @@ export function WallPanel({
   }, [])
   useEffect(() => () => ro.current?.disconnect(), [])
   // The frame casts into the baked shadow map: re-bake once it has resized.
-  const gl = useThree((st) => st.gl)
+  const get = useThree((st) => st.get)
   const invalidate = useThree((st) => st.invalidate)
   useEffect(() => {
     if (cardH === null) return
-    gl.shadowMap.needsUpdate = true
+    get().gl.shadowMap.needsUpdate = true
     invalidate()
-  }, [cardH, gl, invalidate])
+  }, [cardH, get, invalidate])
 
   useFrame((state) => {
     const dx = state.camera.position.x - position[0]

@@ -64,10 +64,10 @@ export function AttentionWalk({ z }: { z: number }) {
   const tiles = useMemo(() => {
     const ws = WORDS.map((w) => measure(w, FONT) / PX + 0.16)
     const total = ws.reduce((a, b) => a + b, 0) + GAP * (ws.length - 1)
-    let x = -total / 2
+    const centres: number[] = []
+    for (let i = 0, x = -total / 2; i < ws.length; x += ws[i] + GAP, i++) centres.push(x + ws[i] / 2)
     return WORDS.map((w, i) => {
-      const cx = x + ws[i] / 2
-      x += ws[i] + GAP
+      const cx = centres[i]
       const cw = Math.round(ws[i] * PX)
       const ch = Math.round(DEPTH * PX)
       const tex = staticBoard(cw, ch, (ctx) => {

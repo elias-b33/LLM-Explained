@@ -117,8 +117,6 @@ const easeOutBack = (k: number) => 1 + 2.2 * (k - 1) ** 3 + 1.2 * (k - 1) ** 2
 export function TokenSlicer({ tex, position }: { tex: MuseumTextures; position: [number, number, number] }) {
   const [idx, setIdx] = useState(0)
   const L = useMemo(() => layout(SENTENCES[idx]), [idx])
-  const lay = useRef(L)
-  lay.current = L
   useEffect(
     () => () => {
       L.strip.dispose()
@@ -185,9 +183,10 @@ export function TokenSlicer({ tex, position }: { tex: MuseumTextures; position: 
     const t = (clock.current = state.clock.elapsedTime)
     const ph = phase.current
     const dt = t - ph.t0
-    const { blocks } = lay.current
+    // useFrame re-binds this callback on every render, so L is always the current layout
+    const { blocks } = L
     const stripMat = strip.current?.material as MeshBasicMaterial | undefined
-    let stripO = 1
+    let stripO: number
     let blockO = 0
     let k = 0
 

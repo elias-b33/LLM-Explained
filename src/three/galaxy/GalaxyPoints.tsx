@@ -1,6 +1,6 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useThree, type ThreeEvent } from '@react-three/fiber'
-import { CanvasTexture, Color, ShaderMaterial, UniformsLib, UniformsUtils } from 'three'
+import { CanvasTexture, Color, ShaderMaterial, UniformsLib, UniformsUtils, type Points } from 'three'
 import type { GalaxyData } from './types'
 
 /**
@@ -24,21 +24,6 @@ function pickBest(e: ThreeEvent<PointerEvent | MouseEvent>): number | null {
     }
   }
   return bestIdx ?? e.index ?? null
-}
-
-/** A soft round sprite so points render as glowing dots instead of squares. */
-export function makeDotTexture(): CanvasTexture {
-  const size = 64
-  const canvas = document.createElement('canvas')
-  canvas.width = canvas.height = size
-  const ctx = canvas.getContext('2d')!
-  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
-  g.addColorStop(0, 'rgba(255,255,255,1)')
-  g.addColorStop(0.45, 'rgba(255,255,255,0.5)')
-  g.addColorStop(1, 'rgba(255,255,255,0)')
-  ctx.fillStyle = g
-  ctx.fillRect(0, 0, size, size)
-  return new CanvasTexture(canvas)
 }
 
 /** A crisper star sprite (tight bright core) so dense clusters read as distinct dots. */
@@ -70,13 +55,16 @@ export function GalaxyPoints({
   onSelect: (i: number) => void
   size?: number
 }) {
-  const sprite = useMemo(makeStarTexture, [])
+  const sprite = useMemo(() => makeStarTexture(), [])
   const height = useThree((s) => s.size.height)
   const dpr = useThree((s) => s.viewport.dpr)
   const material = useMemo(() => makeStarMaterial(sprite), [sprite])
+  const points = useRef<Points>(null)
   // Match three's own sizeAttenuation scale (half the drawing-buffer height).
+  // Written through the mounted object (the attached material), not the memo value.
   useEffect(() => {
-    material.uniforms.uScale.value = (height * dpr) / 2
+    const m = points.current?.material as ShaderMaterial | undefined
+    if (m) m.uniforms.uScale.value = (height * dpr) / 2
   }, [material, height, dpr])
   useEffect(() => () => material.dispose(), [material])
 
@@ -113,6 +101,7 @@ export function GalaxyPoints({
 
   return (
     <points
+      ref={points}
       onPointerMove={(e: ThreeEvent<PointerEvent>) => {
         e.stopPropagation()
         const i = pickBest(e)

@@ -34,8 +34,14 @@ export function Playground({
   const buf = useRef<{ text: string; top: [string, number, boolean][] | null }>({ text: '', top: null })
   const raf = useRef(0)
 
-  useEffect(() => {
+  // A new default prompt (new corpus) replaces whatever was typed: adjust state while
+  // rendering instead of in an effect, so there is no extra commit with the stale prompt.
+  const [seenDefault, setSeenDefault] = useState(defaultPrompt)
+  if (seenDefault !== defaultPrompt) {
+    setSeenDefault(defaultPrompt)
     setPrompt(defaultPrompt)
+  }
+  useEffect(() => {
     onPromptChange?.(defaultPrompt)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaultPrompt])

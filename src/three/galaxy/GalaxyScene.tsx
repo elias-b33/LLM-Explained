@@ -4,13 +4,14 @@ import { CameraControls, Html, Line } from '@react-three/drei'
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing'
 import { AdditiveBlending, Color, Sphere, Vector3 } from 'three'
 import type CameraControlsImpl from 'camera-controls'
-import galaxyRaw from '@/data/galaxy.json'
-import type { GalaxyData } from './types'
-import { GalaxyPoints, makeDotTexture } from './GalaxyPoints'
+import { galaxyData } from './data'
+import { GalaxyPoints } from './GalaxyPoints'
+import { makeDotTexture } from './textures'
 import { GalaxyLabels } from './GalaxyLabels'
 import { GalaxyFlyControls } from './GalaxyFlyControls'
 
-const data = galaxyRaw as unknown as GalaxyData
+// This module is imported lazily by GalaxyPage, which only renders after the route loaded the data.
+const data = galaxyData()
 type ControlsRef = RefObject<CameraControlsImpl | null>
 const UNI_FIT = 17
 
@@ -33,10 +34,10 @@ const ALL_RADIUS = (() => {
 })()
 
 function RaycastConfig() {
-  const raycaster = useThree((s) => s.raycaster)
+  const get = useThree((s) => s.get)
   useEffect(() => {
-    raycaster.params.Points = { threshold: 0.9 }
-  }, [raycaster])
+    get().raycaster.params.Points = { threshold: 0.9 }
+  }, [get])
   return null
 }
 
@@ -80,7 +81,7 @@ function CameraDirector({
 }
 
 function Highlights({ forced }: { forced: number[] }) {
-  const sprite = useMemo(makeDotTexture, [])
+  const sprite = useMemo(() => makeDotTexture(), [])
   const geo = useMemo(() => {
     const pos = new Float32Array(forced.length * 3)
     const col = new Float32Array(forced.length * 3)
@@ -137,7 +138,7 @@ function hash(n: number): number {
 
 /** Soft additive glow clouds around each universe, so it reads as a nebula. */
 function Nebulae() {
-  const sprite = useMemo(makeDotTexture, [])
+  const sprite = useMemo(() => makeDotTexture(), [])
   const puffs = useMemo(
     () =>
       data.clusters.flatMap((c, ci) => {

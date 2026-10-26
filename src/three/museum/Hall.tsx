@@ -460,8 +460,8 @@ function Walls({ tex, W, D, H }: { tex: MuseumTextures; W: number; D: number; H:
 }
 
 function Columns({ tex, D, H }: { tex: MuseumTextures; D: number; H: number }) {
-  const lathe = useMemo(buildColumn, [])
-  const glow = useMemo(makeUplightTexture, [])
+  const lathe = useMemo(() => buildColumn(), [])
+  const glow = useMemo(() => makeUplightTexture(), [])
   const shaft = useMemo(() => tile(tex.plaster, 1, 1.4), [tex])
   const block = useMemo(() => tile(tex.plaster, 0.35, 0.35), [tex])
   const zs = useMemo(() => columnZs(D), [D])

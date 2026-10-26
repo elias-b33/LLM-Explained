@@ -16,6 +16,7 @@ import {
   type Group,
   type Mesh,
   type MeshBasicMaterial,
+  type ShaderMaterial,
 } from 'three'
 import type { Exhibit } from './halls'
 import { tile, type MuseumTextures } from './materials'
@@ -65,7 +66,7 @@ function canvasTex(w: number, h: number, draw: (ctx: CanvasRenderingContext2D) =
 }
 
 /** A causal (lower-triangular) attention heat-map. */
-export function makeAttentionTexture(n = 12): CanvasTextureT {
+function makeAttentionTexture(n = 12): CanvasTextureT {
   return canvasTex(512, 512, (ctx) => {
     ctx.fillStyle = '#05060c'
     ctx.fillRect(0, 0, 512, 512)
@@ -624,8 +625,11 @@ export function DisplayTable({ tex, z0, z1 }: { tex: MuseumTextures; z0: number;
   const oak = useMemo(() => tile(tex.oak, 1, len / 1.2), [tex, len])
   const marble = useMemo(() => tile(tex.marble, 1, len / 1.4), [tex, len])
   const uniforms = useMemo(() => ({ uTime: { value: 0 } }), [])
+  const screen = useRef<ShaderMaterial>(null)
   useFrame((state) => {
-    uniforms.uTime.value = state.clock.elapsedTime
+    // write through the mounted material (R3F may hold its own uniforms object)
+    const m = screen.current
+    if (m) m.uniforms.uTime.value = state.clock.elapsedTime
   })
   return (
     <group position={[0, 0, mid]}>
@@ -653,7 +657,7 @@ export function DisplayTable({ tex, z0, z1 }: { tex: MuseumTextures; z0: number;
       ))}
       <mesh position={[0, H + 0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[W - 0.32, len - 0.6]} />
-        <shaderMaterial vertexShader={STREAM_VERT} fragmentShader={TABLE_FRAG} uniforms={uniforms} toneMapped={false} />
+        <shaderMaterial ref={screen} vertexShader={STREAM_VERT} fragmentShader={TABLE_FRAG} uniforms={uniforms} toneMapped={false} />
       </mesh>
       {/* glass top */}
       <mesh position={[0, H + 0.045, 0]} renderOrder={2}>

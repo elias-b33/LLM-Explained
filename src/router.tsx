@@ -27,7 +27,12 @@ export const router = createBrowserRouter([
   {
     path: '/galaxy',
     errorElement: <RouteError />,
-    lazy: () => import('@/app/GalaxyPage').then((m) => ({ Component: m.GalaxyPage })),
+    // the page and its 45k-word data load in parallel; the page renders once both are in
+    lazy: async () => {
+      const [page, galaxy] = await Promise.all([import('@/app/GalaxyPage'), import('@/three/galaxy/data')])
+      await galaxy.loadGalaxy()
+      return { Component: page.GalaxyPage }
+    },
   },
   {
     path: '/museum/:slug',

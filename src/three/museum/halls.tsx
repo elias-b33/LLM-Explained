@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import type { DemoStatus } from '@/types'
-import { SectionHeading } from '@/primitives/SectionHeading'
+import { Headline } from './Headline'
 
 /**
  * A hall is an ordered spatial sequence placed down the room's depth (you walk
@@ -67,16 +67,6 @@ export interface Hall {
   segments: Segment[]
   decor?: Decor[]
   tour?: TourStop[]
-}
-
-/** A short wall placard: big headline + one line. */
-function Headline({ title, line }: { title: string; line: string }) {
-  return (
-    <>
-      <SectionHeading>{title}</SectionHeading>
-      <p style={{ marginTop: 10, fontSize: 17, lineHeight: 1.45, color: 'var(--fg-muted)' }}>{line}</p>
-    </>
-  )
 }
 
 /** What a station opens in the focused 2D overlay. */

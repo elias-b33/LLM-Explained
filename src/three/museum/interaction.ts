@@ -1,4 +1,4 @@
-import { useEffect, useRef, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
 import type { Object3D } from 'three'
 
 /**
@@ -31,7 +31,10 @@ export const registry = new Set<{ current: Interactable }>()
  *  is re-read every frame, so it may close over fresh props/state. */
 export function useInteractable(def: Interactable) {
   const ref = useRef(def)
-  ref.current = def
+  // Keep the latest definition after each commit (before the next frame reads it).
+  useLayoutEffect(() => {
+    ref.current = def
+  })
   useEffect(() => {
     const entry = ref
     registry.add(entry)

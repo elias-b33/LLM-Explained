@@ -1,6 +1,9 @@
 /* Only scan src/ for class names; auto-detection otherwise walks the whole
    project (public/ textures, build output) and can exhaust CI build memory. */
 @import 'tailwindcss' source('.');
+/* data files, not markup: keep Tailwind from scanning 4 MB of words for class names */
+@source not './data/galaxy.json';
+@source not './data/galaxy.bin';
 
 /* Manual (class-based) dark mode toggle. */
 @custom-variant dark (&:where(.dark, .dark *));

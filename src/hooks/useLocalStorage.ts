@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 type SetValue<T> = T | ((prev: T) => T)
 
@@ -7,14 +7,15 @@ type SetValue<T> = T | ((prev: T) => T)
  * Tolerant of private-mode / quota errors (falls back to in-memory state).
  */
 export function useLocalStorage<T>(key: string, initialValue: T) {
-  const initialRef = useRef(initialValue)
+  // the first initialValue wins, like useState (later renders may pass a new literal)
+  const [initial] = useState(initialValue)
 
   const [value, setValue] = useState<T>(() => {
     try {
       const raw = localStorage.getItem(key)
-      return raw === null ? initialRef.current : (JSON.parse(raw) as T)
+      return raw === null ? initial : (JSON.parse(raw) as T)
     } catch {
-      return initialRef.current
+      return initial
     }
   })
 
@@ -30,7 +31,7 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
     setValue((prev) => (typeof next === 'function' ? (next as (p: T) => T)(prev) : next))
   }, [])
 
-  const reset = useCallback(() => setValue(initialRef.current), [])
+  const reset = useCallback(() => setValue(initial), [initial])
 
   return [value, set, reset] as const
 }

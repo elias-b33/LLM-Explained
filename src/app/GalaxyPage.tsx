@@ -1,20 +1,25 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type CameraControlsImpl from 'camera-controls'
-import galaxyRaw from '@/data/galaxy.json'
-import type { GalaxyData } from '@/three/galaxy/types'
+import { galaxyData } from '@/three/galaxy/data'
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
 import { GalaxyOverlay } from '@/three/galaxy/GalaxyOverlay'
 
 const GalaxyScene = lazy(() => import('@/three/galaxy/GalaxyScene'))
-const data = galaxyRaw as unknown as GalaxyData
 
+/** Rendered by the /galaxy route once its lazy loader has fetched the word data (router.tsx). */
 export function GalaxyPage() {
+  const data = galaxyData()
   const navigate = useNavigate()
   const reducedMotion = usePrefersReducedMotion()
   const controls = useRef<CameraControlsImpl | null>(null)
   const tipRef = useRef<HTMLDivElement>(null)
   const mouse = useRef({ x: 0, y: 0 })
+  // Place the tooltip at the last pointer position as it mounts; pointermove moves it after.
+  const attachTip = useCallback((el: HTMLDivElement | null) => {
+    tipRef.current = el
+    if (el) el.style.transform = `translate(${mouse.current.x + 16}px, ${mouse.current.y + 18}px)`
+  }, [])
 
   const [selected, setSelected] = useState<number | null>(null)
   const [hovered, setHovered] = useState<number | null>(null)
@@ -26,7 +31,7 @@ export function GalaxyPage() {
       m[w.w] = i
     })
     return m
-  }, [])
+  }, [data])
 
   const forced = useMemo(() => {
     const s = new Set<number>()
@@ -36,7 +41,7 @@ export function GalaxyPage() {
     }
     if (hovered != null) s.add(hovered)
     return Array.from(s)
-  }, [selected, hovered])
+  }, [data, selected, hovered])
 
   useEffect(() => {
     const prev = document.title
@@ -112,10 +117,9 @@ export function GalaxyPage() {
       {/* cursor tooltip: shows the exact word you'll select before you click */}
       {hovered != null && hovered !== selected && (
         <div
-          ref={tipRef}
+          ref={attachTip}
           dir="auto"
           className="pointer-events-none fixed top-0 left-0 z-50 flex items-center gap-1.5 rounded-sm border border-[#b8924f]/45 bg-[#1a140e]/85 px-2.5 py-1 text-sm text-[#f6efe0] shadow-lg"
-          style={{ transform: `translate(${mouse.current.x + 16}px, ${mouse.current.y + 18}px)` }}
         >
           <span
             className="h-2 w-2 shrink-0 rounded-full"

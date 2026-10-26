@@ -1,0 +1,2 @@
+# Binary data: never touch line endings (galaxy.bin, model weights)
+*.bin binary

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing'
 import { AdditiveBlending, BufferAttribute, Color, MathUtils, type BufferGeometry, type Group } from 'three'
-import { makeDotTexture } from '@/three/galaxy/GalaxyPoints'
+import { makeDotTexture } from '@/three/galaxy/textures'
 import { useOnScreenFrameloop } from '@/hooks/useOnScreenFrameloop'
 
 const NODES = 220
@@ -106,10 +106,10 @@ function Network() {
   const group = useRef<Group>(null)
   const disc = useRef<Group>(null)
   const pulseGeo = useRef<BufferGeometry>(null)
-  const sprite = useMemo(makeDotTexture, [])
-  const net = useMemo(buildNetwork, [])
-  const ring = useMemo(buildDisc, [])
-  const stars = useMemo(buildStars, [])
+  const sprite = useMemo(() => makeDotTexture(), [])
+  const net = useMemo(() => buildNetwork(), [])
+  const ring = useMemo(() => buildDisc(), [])
+  const stars = useMemo(() => buildStars(), [])
   const pulsePos = useMemo(() => new Float32Array(PULSES * 3), [])
   const mouse = useRef({ x: 0, y: 0 })
 
@@ -134,18 +134,20 @@ function Network() {
     }
     if (disc.current) disc.current.rotation.y -= delta * 0.045
 
-    // Move each pulse along its synapse.
+    // Move each pulse along its synapse (writing into the mounted attribute's buffer).
+    const attr = pulseGeo.current?.getAttribute('position') as BufferAttribute | undefined
+    if (!attr) return
+    const out = attr.array as Float32Array
     for (let k = 0; k < PULSES; k++) {
       const [a, b] = net.pulseEdges[k]
       const f = (t * net.pulseSpeed[k] + net.pulseOffset[k]) % 1
       const pa = net.pts[a]
       const pb = net.pts[b]
-      pulsePos[k * 3] = pa[0] + (pb[0] - pa[0]) * f
-      pulsePos[k * 3 + 1] = pa[1] + (pb[1] - pa[1]) * f
-      pulsePos[k * 3 + 2] = pa[2] + (pb[2] - pa[2]) * f
+      out[k * 3] = pa[0] + (pb[0] - pa[0]) * f
+      out[k * 3 + 1] = pa[1] + (pb[1] - pa[1]) * f
+      out[k * 3 + 2] = pa[2] + (pb[2] - pa[2]) * f
     }
-    const attr = pulseGeo.current?.getAttribute('position') as BufferAttribute | undefined
-    if (attr) attr.needsUpdate = true
+    attr.needsUpdate = true
   })
 
   return (

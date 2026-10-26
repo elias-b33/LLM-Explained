@@ -27,21 +27,21 @@ export function AutoregressiveGen() {
   const [playing, setPlaying] = useState(false)
   const revealed = Math.min(seedCount + r, total)
   const done = revealed >= total
+  // auto-play stops by itself at the end (Reset / a new preset clear `playing`)
+  const running = playing && !done
 
-  useEffect(() => {
+  const choosePreset = (i: number) => {
+    if (i === pi) return
+    setPi(i)
     setR(0)
     setPlaying(false)
-  }, [pi])
+  }
 
   useEffect(() => {
-    if (!playing) return
-    if (done) {
-      setPlaying(false)
-      return
-    }
+    if (!running) return
     const id = setTimeout(() => setR((v) => v + 1), 300)
     return () => clearTimeout(id)
-  }, [playing, r, done])
+  }, [running, r])
 
   return (
     <div className="space-y-4">
@@ -51,7 +51,7 @@ export function AutoregressiveGen() {
             key={i}
             variant={i === pi ? 'secondary' : 'ghost'}
             className="!px-2.5 !py-1 font-mono text-xs"
-            onClick={() => setPi(i)}
+            onClick={() => choosePreset(i)}
           >
             {p.seed.slice(0, 16)}…
           </Button>
@@ -77,7 +77,7 @@ export function AutoregressiveGen() {
 
       <div className="flex flex-wrap items-center gap-3">
         <Button variant="primary" onClick={() => !done && setPlaying((p) => !p)} disabled={done}>
-          {playing ? (
+          {running ? (
             <>
               <PauseIcon size={15} /> Pause
             </>

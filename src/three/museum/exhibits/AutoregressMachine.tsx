@@ -147,11 +147,11 @@ function glowTexture() {
  */
 export function AutoregressMachine({ tex, z, consoleZ }: { tex: MuseumTextures; z: number; consoleZ: number }) {
   const board = useMemo(() => makeBoard(BW, BH), [])
-  const glow = useMemo(glowTexture, [])
+  const glow = useMemo(() => glowTexture(), [])
   const oak = useMemo(() => tile(tex.oak, 1.5, 1), [tex])
   const [tIdx, setTIdx] = useState(1)
   const sim = useRef<Sim>(null as unknown as Sim)
-  if (!sim.current) {
+  if (sim.current == null) {
     const dist = distFor(PROMPTS[0], null, 0)
     const p = shape(dist, TEMPERATURES[1])
     sim.current = {

@@ -43,10 +43,8 @@ function spawnWorker(): Worker {
  * lifetime. Worker messages land in a mutable store; React state is committed
  * at most once per animation frame, so a hidden tab never piles up renders.
  */
-export function useTrainer() {
-  const workerRef = useRef<Worker | null>(null)
-  const helpersRef = useRef<Worker[]>([])
-  const store = useRef<TrainerView>({
+function initialView(): TrainerView {
+  return {
     phase: 'booting',
     info: null,
     step: 0,
@@ -64,8 +62,15 @@ export function useTrainer() {
     selfTest: null,
     selfTestRunning: false,
     version: 0,
-  })
-  const [view, setView] = useState<TrainerView>(store.current)
+  }
+}
+
+export function useTrainer() {
+  const workerRef = useRef<Worker | null>(null)
+  const helpersRef = useRef<Worker[]>([])
+  const [view, setView] = useState<TrainerView>(initialView)
+  // the mutable store starts as the same object as the first committed view
+  const store = useRef<TrainerView>(view)
   const rafRef = useRef(0)
   const genRef = useRef<{ id: number; h: GenHandlers } | null>(null)
   const genId = useRef(0)

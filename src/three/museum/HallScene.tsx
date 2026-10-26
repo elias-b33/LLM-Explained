@@ -2,7 +2,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import { EffectComposer, Bloom, ToneMapping, Vignette } from '@react-three/postprocessing'
 import { ToneMappingMode } from 'postprocessing'
-import { makeDotTexture } from '@/three/galaxy/GalaxyPoints'
+import { makeDotTexture } from '@/three/galaxy/textures'
 import { Hall } from './Hall'
 import { WallPanel } from './WallPanel'
 import { Station } from './Station'
@@ -67,13 +67,13 @@ function LoadingFlag({ onChange }: { onChange: (loading: boolean) => void }) {
 
 function SettleRenders() {
   const invalidate = useThree((s) => s.invalidate)
-  const gl = useThree((s) => s.gl)
+  const get = useThree((s) => s.get)
   useEffect(() => {
     // Lights and shadow casters never move, so shadows are baked: the shadow map
     // auto-update is off (see onCreated) and re-rendered only here, once the
     // suspended hall has mounted, instead of on every frame.
     const settle = () => {
-      gl.shadowMap.needsUpdate = true
+      get().gl.shadowMap.needsUpdate = true
       invalidate()
     }
     settle()
@@ -83,7 +83,7 @@ function SettleRenders() {
       clearTimeout(t1)
       clearTimeout(t2)
     }
-  }, [invalidate, gl])
+  }, [invalidate, get])
   return null
 }
 
@@ -119,7 +119,7 @@ export default function HallScene({
   // Module-level profile read by textures/boards while the (keyed) Canvas mounts.
   setActiveQuality(quality)
   const profile = QUALITY_PROFILES[quality]
-  const sprite = useMemo(makeDotTexture, [])
+  const sprite = useMemo(() => makeDotTexture(), [])
   const colliders = useMemo(() => buildColliders(hall), [hall])
   const [loading, setLoading] = useState(false)
   // The lazy canvas can mount before layout settles — nudge a resize after paint.
