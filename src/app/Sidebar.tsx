@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react'
 import { MODULES, moduleLabel } from '@/modules/registry'
 import { useProgress } from '@/progress/ProgressProvider'
 import { cn } from '@/lib/cn'
-import { CloseIcon, MuseumIcon, PlanetIcon, SparklesIcon, WrenchIcon } from './icons'
+import { ChatIcon, CloseIcon, MuseumIcon, PlanetIcon, SparklesIcon, WrenchIcon } from './icons'
 import { StatusDot } from './StatusDot'
 import type { ModuleMeta } from '@/types'
 
@@ -113,6 +113,10 @@ function Annexes({ onNavigate }: { onNavigate?: () => void }) {
       <Link to="/workshop" onClick={onNavigate} className={link}>
         <WrenchIcon size={15} className="text-brass" />
         Workshop · train a model
+      </Link>
+      <Link to="/ask" onClick={onNavigate} className={link}>
+        <ChatIcon size={15} className="text-brass" />
+        Reading room · ask a book
       </Link>
     </div>
   )

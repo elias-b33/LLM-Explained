@@ -149,6 +149,14 @@ export const WrenchIcon = (p: IconProps) => (
   </Svg>
 )
 
+/** Speech bubble — "Ask the text", the reading room. */
+export const ChatIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 5h16v11H9l-5 4z" />
+    <path d="M8 9.5h8M8 12.5h5" />
+  </Svg>
+)
+
 export const PlayIcon =(p: IconProps) => (
   <Svg {...p}>
     <path d="M6 4v16l14-8z" />

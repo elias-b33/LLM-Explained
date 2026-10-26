@@ -4,7 +4,7 @@ import { motion } from 'motion/react'
 import { MODULES, TOTAL_MINUTES, moduleLabel } from '@/modules/registry'
 import { useProgress } from '@/progress/ProgressProvider'
 import { fadeRise, staggerParent } from '@/theme/tokens'
-import { ArrowRightIcon, BookIcon, PlanetIcon, SparklesIcon, WrenchIcon } from './icons'
+import { ArrowRightIcon, BookIcon, ChatIcon, PlanetIcon, SparklesIcon, WrenchIcon } from './icons'
 import { StatusDot } from './StatusDot'
 
 const Hero3D = lazy(() => import('@/three/Hero3D'))
@@ -42,7 +42,7 @@ function HeroExhibit() {
   )
 }
 
-/** "Plan your visit" — the three ways into the collection. */
+/** "Plan your visit" — the five ways into the collection. */
 function VisitOptions({ resumeSlug }: { resumeSlug: string }) {
   const items = [
     {
@@ -77,18 +77,26 @@ function VisitOptions({ resumeSlug }: { resumeSlug: string }) {
       body: 'Train a tiny language model in your own browser and watch gibberish turn into words.',
       tone: 'var(--brass-ink)',
     },
+    {
+      to: '/ask',
+      Icon: ChatIcon,
+      kicker: 'Ask',
+      title: 'The reading room',
+      body: 'Download a real chat model into the tab and question a book. An experiment, with its score shown.',
+      tone: 'var(--accent)',
+    },
   ]
   return (
     <section aria-labelledby="visit-heading" className="mx-auto max-w-6xl px-5 pt-20 sm:px-8">
       <div className="mb-8 text-center">
         <p className="exhibit-label">Plan your visit</p>
         <h2 id="visit-heading" className="mt-2 font-display text-3xl text-fg sm:text-4xl">
-          Four ways through the collection
+          Five ways through the collection
         </h2>
       </div>
-      <div className="grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-2 xl:grid-cols-5">
         {items.map(({ to, Icon, kicker, title, body, tone }) => (
-          <Link key={to} to={to} className="group bg-surface p-6 transition-colors hover:bg-bg sm:p-7">
+          <Link key={to} to={to} className="group bg-surface p-6 transition-colors hover:bg-bg sm:p-7 sm:last:col-span-2 xl:last:col-span-1">
             <span className="flex items-center gap-2" style={{ color: tone }}>
               <Icon size={18} />
               <span className="text-[11px] font-semibold tracking-[0.2em] uppercase">{kicker}</span>

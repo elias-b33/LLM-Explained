@@ -16,6 +16,11 @@ export const router = createBrowserRouter([
         errorElement: <RouteError />,
         lazy: () => import('@/app/WorkshopPage').then((m) => ({ Component: m.WorkshopPage })),
       },
+      {
+        path: '/ask',
+        errorElement: <RouteError />,
+        lazy: () => import('@/app/AskPage').then((m) => ({ Component: m.AskPage })),
+      },
     ],
   },
   // Fullscreen, outside the app shell (no sidebar/topbar) and fully lazy.
