@@ -3,10 +3,24 @@ import { ATTENTION_SENTENCE as S, ATTENTION_HEADS } from '@/data/attentionPatter
 import { Button } from '@/primitives/Button'
 import { cn } from '@/lib/cn'
 import { mix } from '@/lib/color'
+import { useTheme } from '@/theme/ThemeProvider'
+
+/**
+ * Ink for a chip tinted with `w` of the accent colour, chosen so text keeps 4.5:1 contrast
+ * (WCAG AA) at every weight the demo shows. Dark theme: the accent is a light lavender, so
+ * the most-attended chips are light and take near-black ink; light theme: the accent is a deep
+ * violet, so only the most-attended chips are dark enough for white.
+ */
+function chipInk(w: number, isDark: boolean): string | undefined {
+  if (w <= 0.45) return undefined // theme text colour
+  if (isDark) return w >= 0.7 ? '#000' : '#fff'
+  return w >= 0.84 ? '#fff' : '#000'
+}
 
 export function AttentionExplorer() {
   const [head, setHead] = useState(0)
   const [q, setQ] = useState(5) // default: "it"
+  const { isDark } = useTheme()
   const W = ATTENTION_HEADS[head].weights
 
   return (
@@ -53,13 +67,15 @@ export function AttentionExplorer() {
         </p>
         <div className="flex flex-wrap gap-1.5">
           {S.map((w, j) => {
-            // Strongly-attended tokens glow deep violet, so flip their ink to white to stay legible.
+            // Strongly-attended tokens glow, and their ink flips to stay legible on the stronger tint.
             const strong = W[q][j] > 0.45
+            const ink = chipInk(W[q][j], isDark)
             return (
               <span
                 key={j}
-                className={cn('rounded-md px-2 py-1 font-mono text-sm', strong ? 'text-white' : 'text-fg')}
+                className="rounded-md px-2 py-1 font-mono text-sm text-fg"
                 style={{
+                  color: ink,
                   backgroundColor: mix('var(--accent)', Math.round(W[q][j] * 100)),
                   border: `1px solid ${mix('var(--accent)', 28)}`,
                   boxShadow: strong ? '0 0 14px -4px var(--accent)' : undefined,
@@ -67,7 +83,7 @@ export function AttentionExplorer() {
                 title={`${(W[q][j] * 100).toFixed(0)}%`}
               >
                 {w}
-                <span className={cn('ml-1 text-[10px]', strong ? 'text-white/80' : 'text-fg-subtle')}>
+                <span className="ml-1 text-[10px]">
                   {(W[q][j] * 100).toFixed(0)}
                 </span>
               </span>

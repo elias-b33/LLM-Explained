@@ -37,7 +37,7 @@
 
   /* metals & wood */
   --brass: #a8834a;
-  --brass-ink: #86642c; /* brass that passes 4.5:1 as small text */
+  --brass-ink: #7d5d28; /* brass that passes 4.5:1 as small text (also on --bg-deep) */
   --gold: #c9a227;
   --oak: #7a5a3a;
   --oak-deep: #5a4029;

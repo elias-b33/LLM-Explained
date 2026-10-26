@@ -32,3 +32,8 @@ scripts/pretrain/runs/
 scripts/pretrain/**/*.pt
 scripts/pretrain/**/__pycache__/
 scripts/pretrain/.venv/
+
+# Playwright output
+test-results/
+playwright-report/
+blob-report/
