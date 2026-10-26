@@ -1,16 +1,21 @@
-import type { SizeId } from './sizes'
+import type { Device, SizeId } from './sizes'
+import type { GpuInfo } from './engine/gpu/device.ts'
+import type { SelfTestResult } from './engine/gpu/selftest.ts'
+
+export type { GpuInfo, SelfTestResult }
 import type { GPTConfig } from './engine/gpt.ts'
 
 /* main thread -> trainer worker */
 export type ToTrainer =
   | { type: 'connect'; helpers: MessagePort[] }
-  | { type: 'init'; text: string; size: SizeId; prompt: string; seed: number }
+  | { type: 'init'; text: string; size: SizeId; prompt: string; seed: number; device: Device }
   | { type: 'start' }
   | { type: 'pause' }
   | { type: 'reset' }
   | { type: 'generate'; id: number; prompt: string; temperature: number; length: number }
   | { type: 'stopGenerate' }
   | { type: 'insight'; prompt: string }
+  | { type: 'gpuSelfTest' }
 
 export interface ReadyMsg {
   type: 'ready'
@@ -20,6 +25,10 @@ export interface ReadyMsg {
   valChars: number
   prompt: string
   threadsAvailable: number
+  /** the engine actually in use (GPU can fall back to CPU) */
+  device: Device
+  /** GPU memory allocated by the model, in bytes (GPU only) */
+  gpuBytes: number
 }
 
 export interface ProgressMsg {
@@ -70,6 +79,8 @@ export type FromTrainer =
   | { type: 'genDone'; id: number }
   | InsightMsg
   | { type: 'error'; message: string }
+  | { type: 'gpuInfo'; info: GpuInfo }
+  | { type: 'selfTest'; result: SelfTestResult }
 
 /* trainer <-> helper (data-parallel gradient workers) */
 export type ToHelper =

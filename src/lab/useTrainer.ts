@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { FromTrainer, GenMsg, InsightMsg, ReadyMsg, SampleMsg, ToHelper, ToTrainer } from './protocol'
-import type { SizeId } from './sizes'
+import type { FromTrainer, GenMsg, GpuInfo, InsightMsg, ReadyMsg, SampleMsg, SelfTestResult, ToHelper, ToTrainer } from './protocol'
+import type { Device, SizeId } from './sizes'
 
 export interface TrainerView {
   phase: 'booting' | 'loading' | 'ready' | 'training' | 'paused'
@@ -16,6 +16,10 @@ export interface TrainerView {
   samples: SampleMsg[]
   insight: InsightMsg | null
   error: string | null
+  /** WebGPU availability as seen from the training worker (null while probing) */
+  gpu: GpuInfo | null
+  selfTest: SelfTestResult | null
+  selfTestRunning: boolean
   /** bumps on every commit so memoised children can depend on it */
   version: number
 }
@@ -52,12 +56,16 @@ export function useTrainer() {
     samples: [],
     insight: null,
     error: null,
+    gpu: null,
+    selfTest: null,
+    selfTestRunning: false,
     version: 0,
   })
   const [view, setView] = useState<TrainerView>(store.current)
   const rafRef = useRef(0)
   const genRef = useRef<{ id: number; h: GenHandlers } | null>(null)
   const genId = useRef(0)
+  const selfTestWaiters = useRef<((r: SelfTestResult) => void)[]>([])
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const commit = useCallback(() => {
@@ -156,6 +164,20 @@ export function useTrainer() {
         case 'error':
           s.error = m.message
           break
+        case 'gpuInfo':
+          s.gpu = m.info
+          // dev-only: ?nogpu previews the fallback UI on a machine that has WebGPU
+          if (import.meta.env.DEV && new URLSearchParams(location.search).has('nogpu'))
+            s.gpu = { ...m.info, status: 'none', reason: 'WebGPU is present, but no GPU adapter was offered.' }
+          break
+        case 'selfTest': {
+          s.selfTest = m.result
+          s.selfTestRunning = false
+          const ws = selfTestWaiters.current
+          selfTestWaiters.current = []
+          for (const w of ws) w(m.result)
+          break
+        }
       }
       commit()
     }
@@ -178,10 +200,11 @@ export function useTrainer() {
   const send = useCallback((m: ToTrainer) => workerRef.current?.postMessage(m), [])
 
   const init = useCallback(
-    (text: string, size: SizeId, prompt: string) => {
+    (text: string, size: SizeId, prompt: string, device: Device) => {
       store.current.phase = 'loading'
+      store.current.error = null
       commit()
-      send({ type: 'init', text, size, prompt, seed: 1337 })
+      send({ type: 'init', text, size, prompt, seed: 1337, device })
     },
     [send, commit],
   )
@@ -218,5 +241,15 @@ export function useTrainer() {
   const stopGenerate = useCallback(() => send({ type: 'stopGenerate' }), [send])
   const requestInsight = useCallback((prompt: string) => send({ type: 'insight', prompt }), [send])
 
-  return { view, init, start, pause, reset, generate, stopGenerate, requestInsight }
+  /** Compare the GPU engine against the CPU engine; resolves with the per-tensor results. */
+  const runSelfTest = useCallback((): Promise<SelfTestResult> => {
+    store.current.selfTestRunning = true
+    commit()
+    return new Promise((resolve) => {
+      selfTestWaiters.current.push(resolve)
+      send({ type: 'gpuSelfTest' })
+    })
+  }, [send, commit])
+
+  return { view, runSelfTest, init, start, pause, reset, generate, stopGenerate, requestInsight }
 }

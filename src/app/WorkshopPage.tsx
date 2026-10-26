@@ -5,7 +5,20 @@ import { DemoFrame } from '@/primitives/DemoFrame'
 import { DeepDive } from '@/primitives/DeepDive'
 import { cn } from '@/lib/cn'
 import { CORPORA, CUSTOM_MAX, CUSTOM_MIN, type CorpusId } from '@/lab/corpora'
-import { SIZES, frontierRatio, paramCount, type SizeId } from '@/lab/sizes'
+import {
+  SIZES,
+  estStepsPerSec,
+  fmtBytes,
+  fmtSpeed,
+  frontierRatio,
+  gpuMemory,
+  paramCount,
+  type Device,
+  type ModelSize,
+  type SizeId,
+} from '@/lab/sizes'
+import { DevicePicker, SelfTestPanel } from '@/lab/DevicePicker'
+import type { GpuInfo, SelfTestResult } from '@/lab/protocol'
 import { useTrainer } from '@/lab/useTrainer'
 import { LossChart } from '@/lab/LossChart'
 import { SampleTimeline } from '@/lab/SampleTimeline'
@@ -75,6 +88,7 @@ export function WorkshopPage() {
   const { view } = trainer
   const [corpusId, setCorpusId] = useState<CorpusId>('shakespeare')
   const [sizeId, setSizeId] = useState<SizeId>('tiny')
+  const [device, setDevice] = useState<Device>('cpu')
   const [draft, setDraft] = useState('')
   const [customText, setCustomText] = useState<string | null>(null)
   const [loadingText, setLoadingText] = useState(false)
@@ -112,7 +126,7 @@ export function WorkshopPage() {
           if (cancelled) return
         }
       }
-      if (!cancelled) trainer.init(text, sizeId, prompt)
+      if (!cancelled) trainer.init(text, sizeId, prompt, device)
     }
     void go()
     return () => {
@@ -120,7 +134,48 @@ export function WorkshopPage() {
     }
     // trainer.init is stable
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [corpusId, sizeId, customText])
+  }, [corpusId, sizeId, customText, device])
+
+  // the worker falls back to the CPU engine if the GPU fails to start: reflect that in the switch
+  const [fallbackSeen, setFallbackSeen] = useState<unknown>(null)
+  if (view.info && view.info.device === 'cpu' && device === 'gpu' && view.error && fallbackSeen !== view.info) {
+    setFallbackSeen(view.info)
+    setDevice('cpu')
+  }
+
+  // dev-only: expose the live view for debugging (loss history etc.)
+  useEffect(() => {
+    if (import.meta.env.DEV) (window as unknown as { __workshopView?: unknown }).__workshopView = view
+  }, [view])
+
+  // dev-only console hook: window.__gpuSelfTest() prints a per-tensor error table
+  const { runSelfTest } = trainer
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+    const w = window as unknown as { __gpuSelfTest?: () => Promise<SelfTestResult> }
+    w.__gpuSelfTest = async () => {
+      const r = await runSelfTest()
+      console.log(`GPU self-test: ${r.error ?? r.summary}`)
+      for (const c of r.cases) {
+        console.log(`${c.ok ? 'PASS' : 'FAIL'} ${c.label}: loss cpu ${c.lossCpu} gpu ${c.lossGpu} (rel ${c.lossRel.toExponential(2)})`)
+        console.table(
+          c.grads.map((g, i) => ({
+            tensor: g.tensor,
+            size: g.size,
+            gradMaxAbs: g.maxAbs,
+            gradRel: g.rel,
+            paramDriftPerLr: c.params[i].rel,
+            ok: g.ok && c.params[i].ok,
+          })),
+        )
+        console.table(c.stepLosses)
+      }
+      return r
+    }
+    return () => {
+      delete w.__gpuSelfTest
+    }
+  }, [runSelfTest])
 
   const vocabSize = view.info?.vocab.length ?? 70
   const training = view.phase === 'training'
@@ -236,26 +291,28 @@ export function WorkshopPage() {
         </Step>
 
         <Step n="II" title="Pick a model size" hint="Parameters are the knobs training adjusts. More knobs can learn more, but each step is slower.">
-          <div role="radiogroup" aria-label="Model size" className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-            {SIZES.map((s) => {
-              const pc = paramCount(s, vocabSize)
-              return (
-                <Choice key={s.id} selected={sizeId === s.id} onClick={() => setSizeId(s.id)}>
-                  <span className="font-display text-xl leading-tight text-fg">{s.label}</span>
-                  <span className="mt-1 font-mono text-sm text-accent">{fmtInt(pc)} params</span>
-                  <span className="mt-1 text-[11px] leading-snug text-fg-subtle">
-                    {s.nLayer} layer{s.nLayer > 1 ? 's' : ''} · {s.nHead} heads · width {s.dModel} · sees {s.ctx} chars
-                  </span>
-                  <span className="mt-2 text-xs text-fg-muted">{s.blurb}</span>
-                </Choice>
-              )
-            })}
+          <DevicePicker device={device} onChange={setDevice} gpu={view.gpu} disabled={training} />
+          <div role="radiogroup" aria-label="Model size" className="grid grid-cols-1 gap-2">
+            {SIZES.map((s) => (
+              <SizeCard
+                key={s.id}
+                size={s}
+                vocabSize={vocabSize}
+                device={device}
+                gpu={view.gpu}
+                selected={sizeId === s.id}
+                onSelect={() => setSizeId(s.id)}
+              />
+            ))}
           </div>
           <p className="text-xs text-fg-subtle">
             For scale: frontier LLMs are estimated at around a trillion parameters, roughly{' '}
             <b className="text-fg-muted">{frontierRatio(paramCount(SIZES.find((s) => s.id === sizeId)!, vocabSize))} times</b> more than
-            this one.
+            this one. Speeds are rough estimates; the real number shows up under the training bench.
           </p>
+          {view.gpu?.status === 'ok' && (
+            <SelfTestPanel result={view.selfTest} running={view.selfTestRunning} onRun={() => void runSelfTest()} />
+          )}
           <DeepDive title="What’s happening? Model size">
             <p>
               <b>Parameters</b> are the adjustable numbers inside the model. Training is the process of tuning them. <b>Layers</b> are
@@ -265,8 +322,17 @@ export function WorkshopPage() {
               when guessing the next one.
             </p>
             <p>
-              Bigger models can learn more, but every step has more arithmetic to do, so training is slower. Your laptop has to do all
-              of it.
+              Almost all of training is multiplying big tables of numbers together: millions of multiply-adds per step, each one
+              independent of the others. A <b>CPU</b> has a handful of cores that work through them a few at a time. A <b>GPU</b> has
+              thousands of small cores that do thousands of multiply-adds at the same moment, which is exactly the shape of this work.
+              That is why the Large and Huge models are practical on a graphics card and painfully slow without one.
+            </p>
+            <p>
+              <b>VRAM</b> is the graphics card’s own memory. During training it has to hold every parameter, its gradient (which way to
+              nudge it), two running averages the AdamW optimizer keeps for each parameter, and the intermediate results of every layer
+              for the whole batch, including each head’s attention table (context × context numbers per sequence). The memory figure on
+              each size adds all of that up. Browsers don’t reveal how much VRAM a card has, so the requirement line is a rule of thumb.
+              What we can check is the largest single block of memory your GPU allows, and sizes that wouldn’t fit are switched off.
             </p>
           </DeepDive>
         </Step>
@@ -314,7 +380,7 @@ export function WorkshopPage() {
                 would have made those guesses a bit better. Then it repeats, thousands of times.
               </p>
               <p>
-                <b>Chars / sec</b> is how many characters the model is learning from each second, a measure of your computer’s speed.
+                <b>Chars / sec</b> is how many characters the model is learning from each second, a measure of your computer’s speed. On the <b>CPU</b> engine the arithmetic runs in JavaScript, split over a few threads; on the <b>GPU</b> engine every step is sent to the graphics card as a batch of small programs (compute shaders) and the weights never leave it, so only the loss comes back each step.
                 At the start, every parameter is random, so the model is just guessing, and its output is gibberish. It only gets
                 better because millions of tiny nudges add up.
               </p>
@@ -331,6 +397,7 @@ export function WorkshopPage() {
           </div>
           <p className="mt-2 font-mono text-[11px] text-fg-subtle">
             Engine: {view.backend}
+            {view.info && view.info.device === 'gpu' && ` · ${fmtBytes(view.info.gpuBytes)} on the GPU`}
             {view.info &&
               ` · ${fmtInt(view.info.params)} parameters · ${fmtInt(view.info.trainChars)} training chars + ${fmtInt(view.info.valChars)} held out`}
           </p>
@@ -464,7 +531,7 @@ export function WorkshopPage() {
               hundred characters.
             </li>
             <li>
-              <b>Size.</b> Roughly a trillion parameters, against a few thousand to a few hundred thousand here.
+              <b>Size.</b> Roughly a trillion parameters, against eighteen thousand to about ten million here.
             </li>
             <li>
               <b>Data.</b> Trillions of words from books, websites and code, not one book.
@@ -502,10 +569,68 @@ export function WorkshopPage() {
         </ul>
         <p className="mt-2">
           The model is a small GPT-style transformer (token + position embeddings, causal self-attention, MLP, layer norm) written from
-          scratch in TypeScript, trained with AdamW in a Web Worker.
+          scratch in TypeScript, trained with AdamW in a Web Worker, either on the CPU or on the GPU through WebGPU compute shaders
+          (WGSL) that mirror the CPU engine kernel for kernel.
         </p>
       </aside>
     </article>
+  )
+}
+
+/** One model size: architecture, GPU memory and requirement, and estimated speed on each device. */
+function SizeCard({
+  size: s,
+  vocabSize,
+  device,
+  gpu,
+  selected,
+  onSelect,
+}: {
+  size: ModelSize
+  vocabSize: number
+  device: Device
+  gpu: GpuInfo | null
+  selected: boolean
+  onSelect: () => void
+}) {
+  const pc = paramCount(s, vocabSize)
+  const mem = gpuMemory(s, vocabSize)
+  let blocked: string | null = null
+  if (device === 'gpu' && gpu?.status === 'ok') {
+    const limit = Math.min(gpu.maxBufferSize, gpu.maxStorageBufferBindingSize)
+    if (mem.largestBuffer > limit) blocked = `it needs a ${fmtBytes(mem.largestBuffer)} buffer and this GPU allows at most ${fmtBytes(limit)}.`
+  }
+  const cpuSlow = device === 'cpu' && s.gpuRecommended
+  return (
+    <Choice selected={selected} onClick={onSelect} disabled={!!blocked}>
+      <div className="flex w-full flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+        <span className="font-display text-xl leading-tight text-fg">
+          {s.label} <span className="font-mono text-sm text-accent">{fmtInt(pc)} params</span>
+        </span>
+        <span className="text-[11px] text-fg-subtle">
+          {s.nLayer} layer{s.nLayer > 1 ? 's' : ''} · {s.nHead} heads · width {s.dModel} · sees {s.ctx} chars
+        </span>
+      </div>
+      <span className="mt-1 text-xs text-fg-muted">{s.blurb}</span>
+      <span className="mt-1.5 text-[11px] leading-snug text-fg-subtle">
+        <b className="font-medium text-fg-muted">GPU:</b> ≈ {fmtBytes(mem.total)} of video memory · {s.requirement}
+      </span>
+      <span className="text-[11px] leading-snug text-fg-subtle">
+        <b className="font-medium text-fg-muted">Est. speed:</b> CPU {fmtSpeed(estStepsPerSec(s, vocabSize, 'cpu'))} (one thread) · GPU{' '}
+        {fmtSpeed(estStepsPerSec(s, vocabSize, 'gpu'))} (fast desktop GPU)
+      </span>
+      {cpuSlow && (
+        <span className="mt-1 text-[11px] leading-snug" style={{ color: 'var(--danger)' }}>
+          Very slow on the CPU: hours before it writes real words, and each step keeps the controls busy until it finishes.
+          {gpu?.status === 'ok' ? ' Switch to the GPU above.' : ' A GPU is strongly recommended.'}
+        </span>
+      )}
+      {blocked && (
+        <span className="mt-1 text-[11px] leading-snug" style={{ color: 'var(--danger)' }}>
+          Off on this GPU: {blocked}
+        </span>
+      )}
+    </Choice>
   )
 }
 

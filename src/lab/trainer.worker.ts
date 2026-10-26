@@ -8,8 +8,11 @@
 import { Decoder, GPT, sampleFrom, topK, type GPTConfig } from './engine/gpt.ts'
 import { Rng } from './engine/rng.ts'
 import { buildVocab, decode, encode, type Vocab } from './engine/data.ts'
-import { getSize, type ModelSize } from './sizes'
+import { getSize, type Device, type ModelSize } from './sizes'
 import type { FromHelper, FromTrainer, ToHelper, ToTrainer } from './protocol'
+import { GpuGPT } from './engine/gpu/gpuGpt.ts'
+import { adapterLabel, getDevice, probeGpu } from './engine/gpu/device.ts'
+import { runSelfTest } from './engine/gpu/selftest.ts'
 
 interface WorkerScope {
   postMessage(msg: unknown, transfer?: Transferable[]): void
@@ -122,8 +125,25 @@ let y = new Uint16Array(0)
 let gen: { id: number; dec: Decoder; left: number; temp: number; rng: Rng } | null = null
 let genTimer: ReturnType<typeof setTimeout> | null = null
 
+// ---- GPU state
+let device: Device = 'cpu'
+let gpu: GpuGPT | null = null
+let gpuName = 'WebGPU'
+/** losses of submitted-but-unfinished GPU steps, oldest first */
+let inflight: Promise<number>[] = []
+/** GPU steps queued so far (step counts finished ones) */
+let submitted = 0
+/** value of `submitted` when the CPU mirror (model.params) was last refreshed from the GPU */
+let mirrorAt = 0
+let lastResolveT = 0
+/** incremental sample decoding on the CPU mirror, so the GPU keeps working meanwhile */
+let sampleJob: { epoch: number; dec: Decoder | null; rng: Rng; out: number[]; step: number; loss: number } | null = null
+/** steps queued ahead of the loss readback: hides the GPU-to-CPU round trip on small models */
+const MAX_INFLIGHT = 6
+
 const threadsTotal = () => (helpersBroken ? 1 : helpers.length + 1)
 const backendLabel = () => {
+  if (device === 'gpu') return `GPU · WebGPU · ${gpuName}`
   if (mode === 'probe') return `CPU · TypeScript engine · ${threadsTotal()} threads available, picks 1 or ${threadsTotal()} on the first steps`
   const n = mode === 'parallel' ? threadsTotal() : 1
   return `CPU · TypeScript engine · ${n} thread${n === 1 ? '' : 's'}`
@@ -135,10 +155,20 @@ function buildModel() {
   stopGen()
   const v = vocab!
   const cfg: GPTConfig = { vocabSize: v.chars.length, ctx: size.ctx, nLayer: size.nLayer, nHead: size.nHead, dModel: size.dModel }
+  sampleJob = null
+  inflight = []
+  submitted = 0
+  mirrorAt = 0
+  if (gpu) {
+    gpu.destroy()
+    gpu = null
+  }
   model = new GPT(cfg, seed)
-  for (const h of helpers) {
-    const msg: ToHelper = { type: 'cfg', cfg }
-    h.postMessage(msg)
+  if (device === 'cpu') {
+    for (const h of helpers) {
+      const msg: ToHelper = { type: 'cfg', cfg }
+      h.postMessage(msg)
+    }
   }
   rng = new Rng(seed + 1)
   step = 0
@@ -155,10 +185,16 @@ function buildModel() {
   lastEvalAt = 0
   evalCost = 0
   lastLoss = NaN
-  mode = helpers.length > 0 && !helpersBroken ? 'probe' : 'single'
+  // big models on the CPU: data parallelism always wins, so skip the (very slow) benchmark
+  mode = helpers.length > 0 && !helpersBroken ? (size.gpuRecommended ? 'parallel' : 'probe') : 'single'
   probe = { single: 0, singleN: 0, parallel: 0, parallelN: 0 }
   x = new Uint16Array(size.batch * size.ctx)
   y = new Uint16Array(size.batch * size.ctx)
+
+  if (device === 'gpu') {
+    void buildGpu(epoch)
+    return
+  }
 
   post({
     type: 'ready',
@@ -168,11 +204,202 @@ function buildModel() {
     valChars: ids.length - split,
     prompt: promptText,
     threadsAvailable: threadsTotal(),
+    device: 'cpu',
+    gpuBytes: 0,
   })
-  const v0 = evalVal()
+  // a CPU forward pass of Large/Huge takes many seconds: skip the step-0 exam there
+  const v0 = size.gpuRecommended ? NaN : evalVal()
   if (!Number.isNaN(v0)) valBuf.push([0, v0])
   emitSample(Number.isNaN(v0) ? Math.log(v.chars.length) : v0)
   flush(true)
+}
+
+/* =============================================================== GPU path */
+
+function onGpuLost(msg: string) {
+  if (device !== 'gpu') return
+  running = false
+  gpu = null
+  inflight = []
+  post({ type: 'error', message: `The GPU stopped responding (${msg}). Press Reset to try again, or switch to CPU.` })
+}
+
+let errorPosted = false
+async function buildGpu(myEpoch: number) {
+  const v = vocab!
+  const m = model!
+  try {
+    const dev = await getDevice(onGpuLost)
+    if (!errorPosted) {
+      dev.addEventListener('uncapturederror', (e) => {
+        if (errorPosted) return
+        errorPosted = true
+        running = false
+        post({ type: 'error', message: `GPU error: ${(e as GPUUncapturedErrorEvent).error.message}` })
+      })
+    }
+    const g = await GpuGPT.create(dev, m, size.batch, size.ctx)
+    if (myEpoch !== epoch) {
+      g.destroy()
+      return
+    }
+    gpu = g
+  } catch (err) {
+    if (myEpoch !== epoch) return
+    post({ type: 'error', message: `Could not start the GPU engine (${String(err)}). Using the CPU engine instead.` })
+    device = 'cpu'
+    buildModel()
+    return
+  }
+  mirrorAt = 0
+  lastResolveT = performance.now()
+  post({
+    type: 'ready',
+    vocab: v.chars,
+    params: m.numParams,
+    trainChars: split,
+    valChars: ids.length - split,
+    prompt: promptText,
+    threadsAvailable: threadsTotal(),
+    device: 'gpu',
+    gpuBytes: gpu.bytes,
+  })
+  const v0 = await evalValGpu()
+  if (myEpoch !== epoch) return
+  if (!Number.isNaN(v0)) valBuf.push([0, v0])
+  startSampleJob(Number.isNaN(v0) ? Math.log(v.chars.length) : v0)
+  flush(true)
+}
+
+/** Validation loss on the GPU: same windows as evalVal(), forward pass only. */
+async function evalValGpu(): Promise<number> {
+  const g = gpu
+  if (!g) return NaN
+  const T = size.ctx
+  const B = size.batch
+  const span = ids.length - split - T - 1
+  if (span < 1) return NaN
+  const nb = size.id === 'tiny' ? 4 : 2
+  const vx = new Uint16Array(B * T)
+  const vy = new Uint16Array(B * T)
+  let tot = 0
+  for (let k = 0; k < nb; k++) {
+    for (let b = 0; b < B; b++) {
+      const o = split + Math.floor(((k * B + b) / (nb * B)) * span)
+      for (let t = 0; t < T; t++) {
+        vx[b * T + t] = ids[o + t]
+        vy[b * T + t] = ids[o + t + 1]
+      }
+    }
+    tot += await g.evalLoss(vx, vy)
+  }
+  return tot / nb
+}
+
+/** Copy the GPU weights into the CPU model, which is used for sampling and the embedding map. */
+async function refreshMirror() {
+  const g = gpu
+  if (!g || !model) return
+  const at = submitted
+  const w = await g.readParams()
+  if (g !== gpu) return
+  ;(model.params as Float32Array).set(w)
+  mirrorAt = at
+}
+
+const sampleDecoding = () => sampleJob !== null && sampleJob.dec !== null
+
+function startSampleJob(loss: number) {
+  if (sampleJob || !model || !vocab) return
+  const myEpoch = epoch
+  const job = { epoch: myEpoch, dec: null as Decoder | null, rng: new Rng(4242), out: [] as number[], step: submitted, loss }
+  sampleJob = job
+  void (async () => {
+    try {
+      await refreshMirror()
+    } catch {
+      /* device lost: reported elsewhere */
+    }
+    if (sampleJob !== job || myEpoch !== epoch || !model) return
+    job.step = mirrorAt
+    job.dec = new Decoder(model)
+    job.dec.prime(promptIds)
+    pumpSample()
+  })()
+}
+
+/** Decode the pending sample in ~12 ms slices so the GPU queue never runs dry. */
+function pumpSample() {
+  const j = sampleJob
+  if (!j || !j.dec || !vocab) return
+  if (j.epoch !== epoch) {
+    sampleJob = null
+    return
+  }
+  const t0 = performance.now()
+  while (j.out.length < SAMPLE_CHARS && performance.now() - t0 < 12) {
+    const t = sampleFrom(j.dec.probs(SAMPLE_TEMP), j.rng)
+    j.out.push(t)
+    j.dec.push(t)
+  }
+  if (j.out.length >= SAMPLE_CHARS) {
+    sampleJob = null
+    post({ type: 'sample', step: j.step, loss: j.loss, prompt: promptText, text: decode(vocab, j.out) })
+    return
+  }
+  setTimeout(pumpSample, 0)
+}
+
+async function trainStepGpu(myEpoch: number) {
+  const g = gpu
+  if (!g) {
+    running = false
+    return
+  }
+  fillBatch()
+  const warm = Math.min(1, (submitted + 1) / 30)
+  inflight.push(g.trainStep(x, y, { lr: size.lr * warm, beta1: 0.9, beta2: 0.99, eps: 1e-8, weightDecay: 0.01 }, 1))
+  submitted++
+  if (inflight.length >= MAX_INFLIGHT) await resolveGpuStep(myEpoch)
+}
+
+async function resolveGpuStep(myEpoch: number) {
+  const p = inflight.shift()
+  if (!p) return
+  const loss = await p
+  if (myEpoch !== epoch) return
+  const now = performance.now()
+  trainMs += now - lastResolveT
+  lastResolveT = now
+  step++
+  lastLoss = loss
+  lossBuf.push(loss)
+  totalChars += size.batch * size.ctx
+  rate.push({ t: now, chars: totalChars })
+  while (rate.length > 2 && now - rate[0].t > 3000) rate.shift()
+
+  const runNow = wallMs + (now - chunkStart)
+  if (step >= 10 && runNow - lastSampleAt >= SAMPLE_EVERY_MS * 0.8 && !sampleJob) {
+    const sps = (step / Math.max(1, runNow)) * 1000
+    sampleEvery = niceStep(sps * (SAMPLE_EVERY_MS / 1000))
+    if (step % sampleEvery === 0 || runNow - lastSampleAt >= SAMPLE_EVERY_MS * 1.6) {
+      lastSampleAt = runNow
+      startSampleJob(currentLossEstimate())
+    }
+  }
+  if (trainMs - lastEvalAt >= Math.max(1000, evalCost * 10)) {
+    const e0 = performance.now()
+    const v = await evalValGpu()
+    if (myEpoch !== epoch) return
+    evalCost = performance.now() - e0
+    lastEvalAt = trainMs
+    lastResolveT = performance.now() // don't count the exam as training time
+    if (!Number.isNaN(v)) valBuf.push([step, v])
+  }
+}
+
+async function drainGpu(myEpoch: number) {
+  while (inflight.length && myEpoch === epoch) await resolveGpuStep(myEpoch)
 }
 
 function fillBatch() {
@@ -192,10 +419,11 @@ function fillBatch() {
 function evalVal(): number {
   const m = model!
   const T = size.ctx
-  const B = size.batch
+  // Large/Huge on the CPU: a smaller exam, or each check would stall training for minutes
+  const B = size.gpuRecommended ? 2 : size.batch
   const span = ids.length - split - T - 1
   if (span < 1) return NaN
-  const nb = size.id === 'tiny' ? 4 : 2
+  const nb = size.id === 'tiny' ? 4 : size.gpuRecommended ? 1 : 2
   const vx = new Uint16Array(B * T)
   const vy = new Uint16Array(B * T)
   let tot = 0
@@ -415,12 +643,20 @@ async function loop() {
       const t0 = performance.now()
       chunkStart = t0
       while (running && myEpoch === epoch && performance.now() - t0 < 40) {
-        await trainStep(myEpoch)
+        if (device === 'gpu') await trainStepGpu(myEpoch)
+        else await trainStep(myEpoch)
       }
       if (myEpoch !== epoch) break
       flush()
       await yieldNow()
       if (myEpoch === epoch) wallMs += performance.now() - t0
+    }
+    if (device === 'gpu' && myEpoch === epoch) {
+      // finish the queued steps, then snapshot the weights for the writing desk
+      const t0 = performance.now()
+      await drainGpu(myEpoch)
+      if (!sampleDecoding()) await refreshMirror()
+      wallMs += performance.now() - t0
     }
   } catch (err) {
     running = false
@@ -428,6 +664,8 @@ async function loop() {
   } finally {
     looping = false
     if (myEpoch === epoch) flush(true)
+    // resumed while the GPU queue was still draining
+    if (running && myEpoch === epoch) void loop()
   }
 }
 
@@ -439,9 +677,17 @@ function stopGen() {
   gen = null
 }
 
-function startGen(id: number, prompt: string, temperature: number, length: number) {
+let latestGen = 0
+async function startGen(id: number, prompt: string, temperature: number, length: number) {
   if (!model || !vocab) return
   stopGen()
+  latestGen = id
+  // GPU: generate on the CPU copy of the weights; refresh it first when it is behind and idle
+  if (device === 'gpu' && gpu && !running && mirrorAt !== submitted && !sampleDecoding()) {
+    const e = epoch
+    await refreshMirror()
+    if (e !== epoch || latestGen !== id || !model || !vocab) return
+  }
   const dec = new Decoder(model)
   let p = Array.from(encode(vocab, prompt))
   if (p.length === 0) p = [vocab.index.get('\n') ?? vocab.index.get(' ') ?? 0]
@@ -454,7 +700,8 @@ function genTick() {
   genTimer = null
   const g = gen
   if (!g || !vocab) return
-  const n = running ? 3 : 1
+  // (GPU mode: one per tick, so a big model's CPU decoding doesn't starve the GPU queue)
+  const n = running && device === 'cpu' ? 3 : 1
   for (let k = 0; k < n && g.left > 0; k++) {
     const probs = g.dec.probs(g.temp)
     const top = topK(probs, 5).map((i) => [vocab!.chars[i], probs[i]] as [string, number])
@@ -502,6 +749,10 @@ function pca2(rows: number[][]): [number, number][] {
 
 function insight(prompt: string) {
   if (!model || !vocab) return
+  if (device === 'gpu') {
+    void insightGpu(prompt)
+    return
+  }
   const proj = pca2(model.embeddings())
   const points = vocab.chars.map((ch, i) => ({ ch, x: proj[i][0], y: proj[i][1] }))
   let attn: { tokens: string[]; heads: number[][] } | null = null
@@ -515,6 +766,31 @@ function insight(prompt: string) {
   post({ type: 'insight', points, attn })
 }
 
+let insightBusy = false
+/** GPU: embeddings from a fresh weight snapshot, attention computed on the GPU itself. */
+async function insightGpu(prompt: string) {
+  const g = gpu
+  if (!g || !model || !vocab || insightBusy) return
+  insightBusy = true
+  try {
+    const e = epoch
+    if (mirrorAt !== submitted && !sampleDecoding()) await refreshMirror()
+    if (e !== epoch || g !== gpu || !model || !vocab) return
+    const proj = pca2(model.embeddings())
+    const points = vocab.chars.map((ch, i) => ({ ch, x: proj[i][0], y: proj[i][1] }))
+    let attn: { tokens: string[]; heads: number[][] } | null = null
+    const p = Array.from(encode(vocab, prompt)).slice(-g.inferT)
+    if (p.length >= 2) {
+      const heads = await g.attention(p)
+      if (e !== epoch || g !== gpu) return
+      attn = { tokens: p.map((t) => vocab!.chars[t]), heads }
+    }
+    post({ type: 'insight', points, attn })
+  } finally {
+    insightBusy = false
+  }
+}
+
 /* ---- message pump */
 
 scope.onmessage = (e: MessageEvent<ToTrainer | ToHelper>) => {
@@ -526,10 +802,33 @@ scope.onmessage = (e: MessageEvent<ToTrainer | ToHelper>) => {
         return
       case 'connect':
         connectHelpers(m.helpers)
+        void probeGpu()
+          .then((info) => {
+            gpuName = info.status === 'ok' ? adapterLabel(info) : 'WebGPU'
+            post({ type: 'gpuInfo', info })
+          })
+          .catch((err) =>
+            post({
+              type: 'gpuInfo',
+              info: { status: 'none', reason: String(err), vendor: '', architecture: '', description: '', isFallback: false, maxBufferSize: 0, maxStorageBufferBindingSize: 0 },
+            }),
+          )
+        return
+      case 'gpuSelfTest':
+        void (async () => {
+          try {
+            const dev = await getDevice(onGpuLost)
+            const result = await runSelfTest(dev)
+            post({ type: 'selfTest', result })
+          } catch (err) {
+            post({ type: 'selfTest', result: { ok: false, cases: [], ms: 0, summary: 'Self-test could not run', error: String(err) } })
+          }
+        })()
         return
       case 'init': {
         size = getSize(m.size)
         seed = m.seed
+        device = m.device
         vocab = buildVocab(m.text)
         ids = encode(vocab, m.text)
         split = Math.floor(ids.length * 0.9)
@@ -548,8 +847,9 @@ scope.onmessage = (e: MessageEvent<ToTrainer | ToHelper>) => {
         if (vocab) buildModel()
         return
       case 'start':
-        if (!model || running) return
+        if (!model || running || (device === 'gpu' && !gpu)) return
         running = true
+        lastResolveT = performance.now()
         flush(true)
         void loop()
         return
@@ -558,7 +858,7 @@ scope.onmessage = (e: MessageEvent<ToTrainer | ToHelper>) => {
         flush(true)
         return
       case 'generate':
-        startGen(m.id, m.prompt, m.temperature, m.length)
+        void startGen(m.id, m.prompt, m.temperature, m.length)
         return
       case 'stopGenerate':
         if (gen) post({ type: 'genDone', id: gen.id })
